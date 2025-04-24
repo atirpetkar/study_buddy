@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.db
+.env
+faiss.index
+faiss_meta.pkl
