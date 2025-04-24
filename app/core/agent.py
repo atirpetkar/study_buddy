@@ -1,82 +1,67 @@
-import semantic_kernel as sk
-from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
 import os
 from typing import List, Dict, Any
-import asyncio
 import json
+import asyncio
+from openai import AsyncOpenAI
+from dotenv import load_dotenv
+load_dotenv()
 
 class StudyBuddyAgent:
     def __init__(self):
-        self.kernel = self._setup_kernel()
         self.conversation_history = {}  # Simple in-memory storage for now
+        self._setup_client()
         
-    def _setup_kernel(self):
-        """Initialize the Semantic Kernel with the GitHub model"""
-        kernel = sk.Kernel()
+    def _setup_client(self):
+        """Set up OpenAI client for GitHub's models"""
+        token = os.environ.get("GITHUB_TOKEN")
+        endpoint = os.getenv("ENDPOINT")
+        self.model_name = os.getenv("GITHUB_MODEL", "openai/gpt-4o")
         
-        # Configure for GitHub model
-        model_id = os.getenv("GITHUB_MODEL", "gpt-4o")
-        api_key = os.environ.get("GITHUB_TOKEN")
-        endpoint = "https://models.github.ai/inference"
+        self.client = AsyncOpenAI(
+            base_url=endpoint,
+            api_key=token,
+        )
         
-        try:
-            kernel.add_service(
-                OpenAIChatCompletion(
-                    service_id="github-chat",
-                    api_key=api_key
-                )
-            )
-            print(f"Successfully added GitHub model {model_id} as a service")
-        except Exception as e:
-            print(f"Error setting up GitHub model service: {e}")
-        
-        # Import semantic skills (prompt templates)
+        print(f"OpenAI client configured for model: {self.model_name}")
+    
+    def _load_prompt_template(self, mode_name):
+        """Load prompt template from file"""
         skills_directory = os.path.join(os.path.dirname(__file__), "..", "skills")
+        prompt_path = os.path.join(skills_directory, "StudyBuddy", mode_name, "skprompt.txt")
         try:
-            # First try to import as semantic skills (prompt templates)
-            print(f"Loading skills from {skills_directory}")
-            self.study_buddy_skills = kernel.import_semantic_skill_from_directory(
-                skills_directory, "StudyBuddy"
-            )
-            print(f"Loaded skills: {list(self.study_buddy_skills.keys())}")
+            with open(prompt_path, "r") as f:
+                return f.read()
         except Exception as e:
-            print(f"Error loading semantic skills: {e}")
-            self.study_buddy_skills = {}
-            
-            # Create plugin functions with inline prompts as backup
-            if not self.study_buddy_skills:
-                print("Creating inline prompt functions")
-                from semantic_kernel.functions import kernel_function
-
-                @kernel_function
-                async def chat(input: str, history: str, context: str) -> str:
-                    return f"You are a helpful study assistant named Study Buddy.\n\nPrevious conversation:\n{history}\n\nContext from relevant documents:\n{context}\n\nStudent: {input}\n\nStudy Buddy:"
-
-                @kernel_function
-                async def tutor(input: str, history: str, context: str) -> str:
-                    return f"You are an expert tutor named Study Buddy.\nUse the Socratic method to help the student understand deeply.\n\nPrevious conversation:\n{history}\n\nContext from relevant documents:\n{context}\n\nStudent: {input}\n\nStudy Buddy (Tutor Mode):"
-
-                @kernel_function
-                async def quiz(input: str, history: str, context: str) -> str:
-                    return f"You are Study Buddy in Quiz Creator mode.\nCreate 3-5 multiple-choice questions that test understanding.\n\nPrevious conversation:\n{history}\n\nContext from relevant documents:\n{context}\n\nStudent request: {input}\n\nStudy Buddy (Quiz Mode):"
-
-                @kernel_function
-                async def flashcard(input: str, history: str, context: str) -> str:
-                    return f"You are Study Buddy in Flashcard Creator mode.\nCreate 5-8 flashcards covering important concepts.\n\nPrevious conversation:\n{history}\n\nContext from relevant documents:\n{context}\n\nStudent request: {input}\n\nStudy Buddy (Flashcard Mode):"
-
-                self.study_buddy_skills = {
-                    "Chat": chat,
-                    "Tutor": tutor,
-                    "QuizCreator": quiz,
-                    "FlashcardCreator": flashcard
-                }
-                print(f"Created inline prompt functions: {list(self.study_buddy_skills.keys())}")
-        
-        return kernel
+            print(f"Error loading {mode_name} prompt file: {e}")
+            # Return fallback prompts if file not found
+            if mode_name == "Chat":
+                return "You are a helpful study assistant named Study Buddy.\n\nPrevious conversation:\n{{$history}}\n\nContext from relevant documents:\n{{$context}}\n\nStudent: {{$input}}\n\nStudy Buddy:"
+            elif mode_name == "Tutor":
+                return "You are an expert tutor named Study Buddy.\nUse the Socratic method to help the student understand deeply.\n\nPrevious conversation:\n{{$history}}\n\nContext from relevant documents:\n{{$context}}\n\nStudent: {{$input}}\n\nStudy Buddy (Tutor Mode):"
+            elif mode_name == "QuizCreator":
+                return "You are Study Buddy in Quiz Creator mode.\nCreate 3-5 multiple-choice questions that test understanding.\n\nPrevious conversation:\n{{$history}}\n\nContext from relevant documents:\n{{$context}}\n\nStudent request: {{$input}}\n\nStudy Buddy (Quiz Mode):"
+            elif mode_name == "FlashcardCreator":
+                return "You are Study Buddy in Flashcard Creator mode.\nCreate 5-8 flashcards covering important concepts.\n\nPrevious conversation:\n{{$history}}\n\nContext from relevant documents:\n{{$context}}\n\nStudent request: {{$input}}\n\nStudy Buddy (Flashcard Mode):"
+    
+    def _load_config(self, mode_name):
+        """Load config from file"""
+        skills_directory = os.path.join(os.path.dirname(__file__), "..", "skills")
+        config_path = os.path.join(skills_directory, "StudyBuddy", mode_name, "config.json")
+        try:
+            with open(config_path, "r") as f:
+                config = json.load(f)
+                return config.get("completion", {})
+        except Exception as e:
+            print(f"Error loading {mode_name} config file: {e}")
+            # Default configs
+            return {
+                "max_tokens": 1000,
+                "temperature": 0.7
+            }
     
     async def process_message(self, user_id: str, message: str, mode: str = "chat", 
                              vector_search_client=None) -> Dict[str, Any]:
-        """Process a message using the appropriate skill"""
+        """Process a message using GitHub's models via OpenAI client"""
         # Initialize conversation history if needed
         if user_id not in self.conversation_history:
             self.conversation_history[user_id] = []
@@ -97,44 +82,39 @@ class StudyBuddyAgent:
             else:
                 print("No relevant context found in vector store")
         
-        # Get the appropriate skill based on mode
+        # Get the appropriate mode
         skill_name = self._get_skill_for_mode(mode)
         
         try:
-            # Try to use the registered semantic skill
-            if self.study_buddy_skills and skill_name in self.study_buddy_skills:
-                print(f"Executing {skill_name} skill")
-                
-                # Create context variables
-                variables = sk.ContextVariables()
-                variables["input"] = message
-                variables["history"] = self._format_history(history)
-                variables["context"] = context
-                
-                # Execute the skill
-                result = await self.kernel.run_async(
-                    self.study_buddy_skills[skill_name],
-                    input_vars=variables
-                )
-                
-                response_text = str(result)
-            # Fall back to direct GitHub model function if registered
-            elif hasattr(self, 'github_completion'):
-                print(f"Using GitHub model direct function for {mode} mode")
-                result = await self.kernel.run_async(
-                    self.github_completion,
-                    input_vars=sk.ContextVariables(
-                        variables={
-                            "input": message,
-                            "history": self._format_history(history),
-                            "context": context
-                        }
-                    )
-                )
-                response_text = str(result)
-            else:
-                response_text = "I'm sorry, I'm having trouble accessing my skills. Please try again later."
-        
+            # Load the prompt template and config
+            prompt_template = self._load_prompt_template(skill_name)
+            config = self._load_config(skill_name)
+            
+            # Format the prompt
+            formatted_history = self._format_history(history)
+            prompt = prompt_template.replace("{{$input}}", message)
+            prompt = prompt.replace("{{$history}}", formatted_history)
+            prompt = prompt.replace("{{$context}}", context)
+            
+            print(f"Sending prompt to model with {skill_name} mode")
+            
+            # Prepare messages for the API using GitHub's method
+            messages = [
+                {"role": "system", "content": "You are Study Buddy, an AI tutor."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            # Call the OpenAI client with GitHub's model
+            response = await self.client.chat.completions.create(
+                messages=messages,
+                temperature=config.get("temperature", 0.7),
+                max_tokens=config.get("max_tokens", 1000),
+                model=self.model_name
+            )
+            
+            # Extract response text
+            response_text = response.choices[0].message.content
+            
             # Update conversation history
             history.append({"role": "user", "content": message})
             history.append({"role": "assistant", "content": response_text})
@@ -150,6 +130,8 @@ class StudyBuddyAgent:
             }
         except Exception as e:
             print(f"Error processing message: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 "response": f"I encountered an error while processing your request. Please try again. Error details: {str(e)}",
                 "context_used": []
