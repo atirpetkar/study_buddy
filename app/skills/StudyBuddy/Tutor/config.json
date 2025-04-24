@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "description": "Tutoring mode with Socratic method",
+    "type": "completion",
+    "completion": {
+      "max_tokens": 1000,
+      "temperature": 0.6
+    }
+  }

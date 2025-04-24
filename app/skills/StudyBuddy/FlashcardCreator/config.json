@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "description": "Creates flashcards based on document content",
+    "type": "completion",
+    "completion": {
+      "max_tokens": 1500,
+      "temperature": 0.7
+    }
+  }

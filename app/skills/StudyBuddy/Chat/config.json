@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "description": "Regular chat with the study assistant",
+    "type": "completion",
+    "completion": {
+      "max_tokens": 1000,
+      "temperature": 0.7
+    }
+  }
