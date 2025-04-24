@@ -5,6 +5,8 @@ import os
 import numpy as np
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
+from dotenv import load_dotenv
+load_dotenv()
 
 class VectorStoreClient:
     def __init__(self):
