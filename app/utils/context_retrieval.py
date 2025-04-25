@@ -1,8 +1,62 @@
 # app/utils/context_retrieval.py
 import numpy as np
 from typing import Dict, Any, List, Set
+import re
 
-# Update in app/utils/context_retrieval.py
+# Improved chunk text function that respects paragraph boundaries
+def chunk_text_improved(text: str, chunk_size: int = 1000, overlap: int = 200):
+    """
+    Chunk text into segments respecting paragraph and sentence boundaries.
+    
+    Args:
+        text: The text to chunk
+        chunk_size: Target size of each chunk
+        overlap: Amount of text to overlap between chunks
+        
+    Returns:
+        List of text chunks
+    """
+    # Split text into paragraphs
+    paragraphs = re.split(r'\n\s*\n', text)
+    
+    chunks = []
+    current_chunk = ""
+    current_size = 0
+    
+    for paragraph in paragraphs:
+        # Skip empty paragraphs
+        if not paragraph.strip():
+            continue
+            
+        # If adding this paragraph would exceed the chunk size and we already have content,
+        # finalize current chunk and start a new one
+        if current_size + len(paragraph) > chunk_size and current_chunk:
+            chunks.append(current_chunk)
+            
+            # Start new chunk with overlap from previous chunk
+            words = current_chunk.split()
+            if len(words) > overlap // 10:  # Use words as a rough approximation of characters
+                overlap_text = ' '.join(words[-overlap // 10:])
+                current_chunk = overlap_text
+                current_size = len(current_chunk)
+            else:
+                current_chunk = ""
+                current_size = 0
+        
+        # Add paragraph to current chunk
+        if current_chunk and not current_chunk.endswith("\n"):
+            current_chunk += "\n\n"
+            current_size += 2
+            
+        current_chunk += paragraph
+        current_size += len(paragraph)
+    
+    # Add the final chunk if it's not empty
+    if current_chunk:
+        chunks.append(current_chunk)
+    
+    return chunks
+
 async def retrieve_enhanced_context(vector_client, query: str, top_k: int = 5, threshold: float = 1.5):
     """Enhanced context retrieval with better filtering and ranking"""
     try:
@@ -19,11 +73,12 @@ async def retrieve_enhanced_context(vector_client, query: str, top_k: int = 5, t
             return {"results": [], "sources": []}
             
         # Retrieve more candidates than needed, will filter later
-        k = min(top_k * 2, vector_client.index.ntotal)
+        k = min(top_k * 3, vector_client.index.ntotal)
         D, I = vector_client.index.search(query_np, k)
         
         # Process results with filtering
         hits = []
+        seen_content = set()  # Track unique content to avoid duplicates
         sources = set()
         
         for idx, dist in zip(I[0], D[0]):
@@ -31,11 +86,19 @@ async def retrieve_enhanced_context(vector_client, query: str, top_k: int = 5, t
             if idx == -1 or idx >= len(vector_client.metadata):
                 continue
                 
-            # Apply distance threshold - INCREASED from 0.9 to 1.5 to be more permissive
+            # Apply distance threshold
             if dist > threshold:
                 continue
                 
             meta = vector_client.metadata[idx]
+            content = meta["chunk"]
+            
+            # Skip duplicate content (even if from different sources)
+            content_hash = hash(content)
+            if content_hash in seen_content:
+                continue
+                
+            seen_content.add(content_hash)
             
             # Add source to tracking
             source = meta.get("filename", "unknown")
@@ -43,7 +106,7 @@ async def retrieve_enhanced_context(vector_client, query: str, top_k: int = 5, t
             
             # Add to hits
             hits.append({
-                "content": meta["chunk"],
+                "content": content,
                 "metadata": {
                     "source": source,
                     "chunk_index": meta.get("chunk_index", 0),
@@ -56,7 +119,7 @@ async def retrieve_enhanced_context(vector_client, query: str, top_k: int = 5, t
             if len(hits) >= top_k:
                 break
         
-        print(f"Enhanced retrieval found {len(hits)} relevant chunks from {len(sources)} sources")
+        print(f"Enhanced retrieval found {len(hits)} unique chunks from {len(sources)} sources")
         return {
             "results": hits,
             "sources": list(sources)
@@ -81,7 +144,9 @@ def format_context_by_source(search_results: Dict[str, Any]) -> tuple:
     # Format context by source
     formatted_contexts = []
     for source, contents in sources_dict.items():
-        source_context = f"From {source}:\n" + "\n".join(contents)
+        # Format source name - remove file extensions
+        display_source = re.sub(r'\.(txt|md|pdf|docx?)$', '', source)
+        source_context = f"From {display_source}:\n" + "\n\n".join(contents)
         formatted_contexts.append(source_context)
     
     context = "\n\n".join(formatted_contexts)
@@ -89,7 +154,6 @@ def format_context_by_source(search_results: Dict[str, Any]) -> tuple:
     
     return context, context_sources
 
-# Add to app/utils/context_retrieval.py
 async def retrieve_topic_context(vector_client, topic: str, min_chunks: int = 8, max_chunks: int = 15):
     """Retrieve a larger context about a specific topic for quiz generation"""
     try:
@@ -132,11 +196,13 @@ async def retrieve_topic_context(vector_client, topic: str, min_chunks: int = 8,
             source_list.sort(key=lambda x: x["metadata"].get("chunk_index", 0))
             
             # Take a continuous section from each source
-            content = "\n".join([c["content"] for c in source_list])
+            content = "\n\n".join([c["content"] for c in source_list])
             
             # Only add non-empty content
             if content.strip():
-                context_sections.append(f"From {source}:\n{content}")
+                # Format source name - remove file extensions
+                display_source = re.sub(r'\.(txt|md|pdf|docx?)$', '', source)
+                context_sections.append(f"From {display_source}:\n{content}")
                 sources.append(source)
         
         # Combine everything into a single context
