@@ -1,5 +1,7 @@
 # repository.py: Database CRUD operations for models
+import datetime
 import json
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 from . import models
 # Add at the top of app/models/repository.py
@@ -167,3 +169,177 @@ def get_document_content(db, document_id: str):
     # Combine chunks into full document
     content = "\n".join([chunk.chunk_text for chunk in chunks])
     return content
+
+
+# Add to app/models/repository.py
+def create_flashcards(db, user_id: str, document_id: str, flashcard_content: Dict[str, Any]):
+    """Create a new flashcard set in the database"""
+    import uuid
+    flashcard = models.Flashcard(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        related_document_id=document_id,
+        flashcard_content=json.dumps(flashcard_content)
+    )
+    db.add(flashcard)
+    db.commit()
+    db.refresh(flashcard)
+    return flashcard
+
+def get_flashcards(db, flashcard_id: str):
+    """Get flashcards by ID"""
+    flashcard = db.query(models.Flashcard).filter(models.Flashcard.id == flashcard_id).first()
+    if not flashcard:
+        return None
+    content = json.loads(flashcard.flashcard_content) if flashcard.flashcard_content else {}
+    return {
+        "id": flashcard.id,
+        "user_id": flashcard.user_id,
+        "document_id": flashcard.related_document_id,
+        "created_at": flashcard.created_at.isoformat(),
+        "content": content
+    }
+
+def record_flashcard_review(db, flashcard_id: str, user_id: str, confidence: int):
+    """Record a flashcard review with confidence rating and schedule next review"""
+    import uuid
+    import datetime
+    now = datetime.datetime.utcnow()
+    days_to_next_review = {
+        1: 1,
+        2: 3,
+        3: 7,
+        4: 14,
+        5: 30
+    }.get(confidence, 3)
+    next_review = now + datetime.timedelta(days=days_to_next_review)
+    review = models.FlashcardReview(
+        id=str(uuid.uuid4()),
+        flashcard_id=flashcard_id,
+        user_id=user_id,
+        confidence=confidence,
+        next_review_at=next_review
+    )
+    db.add(review)
+    db.commit()
+    db.refresh(review)
+    return review
+
+def get_flashcards_due_for_review(db, user_id: str):
+    """Get flashcards that are due for review"""
+    now = datetime.datetime.utcnow()
+    
+    # Get the latest review for each flashcard
+    latest_reviews = db.query(
+        models.FlashcardReview.flashcard_id,
+        func.max(models.FlashcardReview.reviewed_at).label('latest_review')
+    ).filter(
+        models.FlashcardReview.user_id == user_id
+    ).group_by(
+        models.FlashcardReview.flashcard_id
+    ).subquery()
+    
+    # Join with reviews to get the next_review_at date
+    due_reviews = db.query(
+        models.FlashcardReview
+    ).join(
+        latest_reviews,
+        and_(
+            models.FlashcardReview.flashcard_id == latest_reviews.c.flashcard_id,
+            models.FlashcardReview.reviewed_at == latest_reviews.c.latest_review
+        )
+    ).filter(
+        models.FlashcardReview.next_review_at <= now
+    ).all()
+    
+    # Get the flashcards
+    flashcard_ids = [review.flashcard_id for review in due_reviews]
+    flashcards = db.query(models.Flashcard).filter(models.Flashcard.id.in_(flashcard_ids)).all()
+    
+    result = []
+    for flashcard in flashcards:
+        content = json.loads(flashcard.flashcard_content) if flashcard.flashcard_content else {}
+        result.append({
+            "id": flashcard.id,
+            "user_id": flashcard.user_id,
+            "document_id": flashcard.related_document_id,
+            "created_at": flashcard.created_at.isoformat(),
+            "content": content
+        })
+    
+    return result
+
+def create_study_plan(db, user_id: str, plan_data: Dict[str, Any]):
+    """Create a new study plan in the database"""
+    import uuid
+    study_plan = models.StudyPlan(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        schedule=json.dumps(plan_data)
+    )
+    db.add(study_plan)
+    db.commit()
+    db.refresh(study_plan)
+    return study_plan
+
+def get_study_plans(db, user_id: str, limit: int = 5):
+    """Get recent study plans for a user"""
+    plans = db.query(models.StudyPlan).filter(
+        models.StudyPlan.user_id == user_id
+    ).order_by(models.StudyPlan.generated_at.desc()).limit(limit).all()
+    return [{
+        "id": plan.id,
+        "user_id": plan.user_id,
+        "generated_at": plan.generated_at.isoformat(),
+        "schedule": json.loads(plan.schedule) if plan.schedule else {}
+    } for plan in plans]
+
+def update_topic_progress(db, user_id: str, topic: str, 
+                         activity_type: str, performance: float, 
+                         confidence: float = None):
+    """Update progress for a topic"""
+    import datetime
+    import uuid
+    progress = db.query(models.ProgressTracking).filter(
+        models.ProgressTracking.user_id == user_id,
+        models.ProgressTracking.topic == topic
+    ).first()
+    now = datetime.datetime.utcnow()
+    if progress:
+        current_proficiency = progress.proficiency
+        weights = {
+            "quiz": 0.7,
+            "flashcard": 0.5,
+            "chat": 0.3
+        }
+        activity_weight = weights.get(activity_type, 0.5)
+        updated_proficiency = (performance * activity_weight) + (current_proficiency * (1 - activity_weight))
+        if confidence is not None:
+            updated_confidence = (confidence * 0.6) + (progress.confidence * 0.4)
+        else:
+            if updated_proficiency > current_proficiency:
+                updated_confidence = min(1.0, progress.confidence + 0.1)
+            else:
+                updated_confidence = max(0.1, progress.confidence - 0.05)
+        progress.proficiency = updated_proficiency
+        progress.confidence = updated_confidence
+        progress.last_interaction = now
+        progress.interaction_type = activity_type
+        db.commit()
+        db.refresh(progress)
+        return progress
+    else:
+        if confidence is None:
+            confidence = 0.5
+        new_progress = models.ProgressTracking(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            topic=topic,
+            proficiency=performance,
+            confidence=confidence,
+            interaction_type=activity_type
+        )
+        db.add(new_progress)
+        db.commit()
+        db.refresh(new_progress)
+        return new_progress

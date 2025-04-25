@@ -86,3 +86,21 @@ class ProgressTracking(Base):
    confidence = Column(Float, default=0.0)
    last_interaction = Column(DateTime, default=datetime.utcnow)
    interaction_type = Column(String)
+
+# Add to app/models/models.py (This model already exists in your repo, but let's make sure)
+class Flashcard(Base):
+    __tablename__ = 'flashcards'
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey('users.id'))
+    related_document_id = Column(String, ForeignKey('uploaded_documents.id'))
+    flashcard_content = Column(Text)  # JSON stored as string
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class FlashcardReview(Base):
+    __tablename__ = 'flashcard_reviews'
+    id = Column(String, primary_key=True, default=generate_uuid)
+    flashcard_id = Column(String, ForeignKey('flashcards.id'))
+    user_id = Column(String, ForeignKey('users.id'))
+    confidence = Column(Integer)  # 1-5 rating
+    next_review_at = Column(DateTime)
+    reviewed_at = Column(DateTime, default=datetime.utcnow)
