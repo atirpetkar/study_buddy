@@ -62,7 +62,7 @@ async def get_study_recommendations(user_id: str, db_session = Depends(db.get_db
         return recommendations
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating recommendations: {str(e)}")
-
+    
 @router.get("/schedule/{user_id}", response_model=SpacedRepetitionSchedule)
 async def get_spaced_repetition_schedule(user_id: str, days: int = 7, db_session = Depends(db.get_db)):
     """Get spaced repetition schedule for upcoming days"""

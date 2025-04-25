@@ -1,12 +1,13 @@
 # app/api/quiz.py
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any, List, Optional
+import uuid
 
 from app.core.vector_store import get_vector_store_client
 from app.core.agent import get_message_processor
 from app.core.quiz_generator import QuizGenerator
 from app.core.quiz_attempt import QuizScorer
-from app.utils.context_retrieval import retrieve_enhanced_context, format_context_by_source
+from app.utils.context_retrieval import retrieve_enhanced_context, format_context_by_source, retrieve_topic_context
 from app.models import db, repository
 from app.schemas.quiz import QuizRequest, QuizResponse, QuizAttemptRequest, QuizAttemptResponse
 

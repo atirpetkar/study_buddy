@@ -280,6 +280,10 @@ class LearningManager:
             "updated_confidence": updated_progress.confidence
         }
     
+    # Edit app/core/learning_manager.py - update the generate_recommendations method
+
+    # Add/update this method in app/core/learning_manager.py
+
     async def generate_recommendations(self, db, user_id: str) -> Dict[str, Any]:
         """Generate personalized study recommendations based on progress data"""
         from app.models import models
@@ -289,14 +293,22 @@ class LearningManager:
             models.ProgressTracking.user_id == user_id
         ).all()
         
+        # Default empty response structure
+        empty_response = {
+            "user_id": user_id,
+            "recommendations": [
+                "Start your learning journey by taking a quiz or reviewing flashcards.",
+                "Upload study materials to get personalized learning content."
+            ],
+            "recommended_topics": [],
+            "recommended_activities": [],
+            "focus_areas": [],
+            "daily_goal": {"description": "Upload your first study material"},
+            "long_term_goals": []
+        }
+        
         if not progress_records:
-            return {
-                "user_id": user_id,
-                "recommendations": [
-                    "Start your learning journey by taking a quiz or reviewing flashcards.",
-                    "Upload study materials to get personalized learning content."
-                ]
-            }
+            return empty_response
         
         # Find topics needing attention
         now = datetime.datetime.utcnow()
@@ -309,27 +321,69 @@ class LearningManager:
         
         # Generate recommendations
         recommendations = []
+        recommended_topics = []
+        recommended_activities = []
         
         if overconfident_topics:
             topic = overconfident_topics[0]
             recommendations.append(f"Your confidence in '{topic}' may be higher than your actual proficiency. Take a challenging quiz to identify knowledge gaps.")
+            recommended_topics.append({
+                "topic": topic,
+                "reason": "Potential overconfidence detected"
+            })
+            recommended_activities.append({
+                "type": "quiz",
+                "topic": topic,
+                "description": "Take a challenging quiz to verify understanding"
+            })
         
         if weak_topics:
             topic = weak_topics[0]
             recommendations.append(f"You're struggling with '{topic}'. Consider a tutoring session to build a stronger foundation.")
+            recommended_topics.append({
+                "topic": topic,
+                "reason": "Low proficiency area"
+            })
+            recommended_activities.append({
+                "type": "tutoring",
+                "topic": topic,
+                "description": "Schedule tutoring session to address fundamentals"
+            })
         
         if stale_topics:
             topic = stale_topics[0]
             recommendations.append(f"It's been over two weeks since you studied '{topic}'. Review flashcards to maintain your knowledge.")
+            recommended_topics.append({
+                "topic": topic,
+                "reason": "Knowledge needs refreshing"
+            })
+            recommended_activities.append({
+                "type": "flashcard",
+                "topic": topic,
+                "description": "Review flashcards to refresh knowledge"
+            })
         
         # Add general recommendations if needed
         if not recommendations:
             recommendations.append("You're making good progress! Continue with regular review sessions.")
             recommendations.append("Try exploring new topics to expand your knowledge.")
         
+        # Create the complete response structure
         return {
             "user_id": user_id,
-            "recommendations": recommendations
+            "recommendations": recommendations,
+            "recommended_topics": recommended_topics,
+            "recommended_activities": recommended_activities,
+            "focus_areas": weak_topics[:3],  # Top 3 weak topics as focus areas
+            "daily_goal": {
+                "description": "Complete at least one learning activity today",
+                "target": "1 activity",
+                "priority_topic": weak_topics[0] if weak_topics else None
+            },
+            "long_term_goals": [
+                {"type": "mastery", "description": f"Master {topic}" if weak_topics else "Build initial proficiency in a topic"}
+                for topic in weak_topics[:2] or ["general"]
+            ]
         }
     
     async def get_spaced_repetition_schedule(self, db, user_id: str, days: int = 7) -> Dict[str, Any]:
