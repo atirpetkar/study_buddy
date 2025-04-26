@@ -1,8 +1,9 @@
 # app/api/__init__.py
 from fastapi import APIRouter
-from app.api import user, vectorstore, chat, quiz, flashcard, progress, learning_progress, personalization, study_plan
+from app.api import user, vectorstore, chat, quiz, flashcard, progress, learning_progress, personalization, study_plan, healthcheck
 
 api_router = APIRouter()
+api_router.include_router(healthcheck.router, tags=["healthcheck"])
 api_router.include_router(user.router, prefix="/users", tags=["users"])
 api_router.include_router(vectorstore.router, prefix="/vectorstore", tags=["vectorstore"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
