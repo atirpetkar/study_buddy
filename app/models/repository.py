@@ -343,3 +343,169 @@ def update_topic_progress(db, user_id: str, topic: str,
         db.commit()
         db.refresh(new_progress)
         return new_progress
+    
+# Add these functions to app/models/repository.py
+
+def get_study_plan(db, plan_id: str):
+    """Get a specific study plan by ID"""
+    study_plan = db.query(models.StudyPlan).filter(
+        models.StudyPlan.id == plan_id
+    ).first()
+    
+    if not study_plan:
+        return None
+    
+    plan_data = json.loads(study_plan.schedule) if study_plan.schedule else {}
+    
+    return {
+        "plan_id": study_plan.id,
+        "plan": plan_data
+    }
+
+def get_user_profile(db, user_id: str):
+    """Get user profile data"""
+    profile = db.query(models.UserProfile).filter(
+        models.UserProfile.user_id == user_id
+    ).first()
+    
+    if not profile:
+        return None
+    
+    # Parse JSON fields
+    study_preferences = {}
+    try:
+        if profile.study_preferences:
+            study_preferences = json.loads(profile.study_preferences)
+    except:
+        pass
+    
+    initial_topics = []
+    try:
+        if profile.initial_topics:
+            initial_topics = json.loads(profile.initial_topics)
+    except:
+        pass
+    
+    goals = []
+    try:
+        if profile.goals:
+            goals = json.loads(profile.goals)
+    except:
+        pass
+    
+    return {
+        "user_id": profile.user_id,
+        "exam_type": profile.exam_type,
+        "study_preferences": study_preferences,
+        "available_study_time": profile.available_study_time,
+        "topics": initial_topics,
+        "goals": goals,
+        "created_at": profile.created_at.isoformat(),
+        "updated_at": profile.updated_at.isoformat()
+    }
+
+def create_user_profile(db, user_id: str, profile_data: Dict[str, Any]):
+    """Create a new user profile"""
+    # Convert complex types to JSON strings
+    study_preferences = json.dumps(profile_data.get("study_preferences", {}))
+    initial_topics = json.dumps(profile_data.get("initial_topics", []))
+    goals = json.dumps(profile_data.get("goals", []))
+    
+    profile = models.UserProfile(
+        user_id=user_id,
+        exam_type=profile_data.get("exam_type"),
+        study_preferences=study_preferences,
+        available_study_time=profile_data.get("available_study_time"),
+        initial_topics=initial_topics,
+        goals=goals
+    )
+    
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+def update_user_profile(db, user_id: str, profile_data: Dict[str, Any]):
+    """Update an existing user profile"""
+    profile = db.query(models.UserProfile).filter(
+        models.UserProfile.user_id == user_id
+    ).first()
+    
+    if not profile:
+        raise ValueError(f"Profile not found for user {user_id}")
+    
+    # Update fields that are present
+    if "exam_type" in profile_data:
+        profile.exam_type = profile_data["exam_type"]
+        
+    if "available_study_time" in profile_data:
+        profile.available_study_time = profile_data["available_study_time"]
+        
+    if "study_preferences" in profile_data:
+        profile.study_preferences = json.dumps(profile_data["study_preferences"])
+        
+    if "goals" in profile_data:
+        profile.goals = json.dumps(profile_data["goals"])
+        
+    if "topics" in profile_data:
+        profile.initial_topics = json.dumps(profile_data["topics"])
+    
+    # Update timestamp
+    profile.updated_at = datetime.datetime.utcnow()
+    
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+def save_study_plan_progress(db, plan_id: str, user_id: str, completed_activities: List[Dict[str, Any]]):
+    """Record progress on a study plan"""
+    # Create a new model for this or just use a generic table
+    
+    # For now, let's create a simple structure in the existing conversation table
+    progress_data = {
+        "plan_id": plan_id,
+        "completed_activities": completed_activities,
+        "timestamp": datetime.datetime.utcnow().isoformat()
+    }
+    
+    conversation = models.Conversation(
+        user_id=user_id,
+        message="Study plan progress update",
+        response=json.dumps(progress_data),
+        source="study_plan_progress"
+    )
+    
+    db.add(conversation)
+    db.commit()
+    
+    return conversation.id
+
+def get_study_plan_progress(db, user_id: str, plan_id: str = None):
+    """Get progress records for study plans"""
+    
+    query = db.query(models.Conversation).filter(
+        models.Conversation.user_id == user_id,
+        models.Conversation.source == "study_plan_progress"
+    )
+    
+    if plan_id:
+        # Filter for specific plan
+        query = query.filter(models.Conversation.response.like(f'%"plan_id": "{plan_id}"%'))
+    
+    progress_records = query.order_by(models.Conversation.created_at.desc()).all()
+    
+    results = []
+    for record in progress_records:
+        try:
+            progress_data = json.loads(record.response)
+            results.append({
+                "id": record.id,
+                "plan_id": progress_data.get("plan_id"),
+                "completed_activities": progress_data.get("completed_activities", []),
+                "timestamp": record.created_at.isoformat()
+            })
+        except:
+            # Skip if JSON parsing fails
+            continue
+    
+    return results
