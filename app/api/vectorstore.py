@@ -141,6 +141,40 @@ async def upload_and_vectorize(files: List[UploadFile] = File(...)):
         "files": all_metadatas
     })
 
+@router.get("/documents")
+async def list_documents():
+    """List all documents stored in the vector store"""
+    vector_client = get_vector_store_client()
+    
+    if not vector_client.metadata:
+        return {"documents": []}
+    
+    # Process metadata to get a unique list of documents
+    document_map = {}
+    
+    for item in vector_client.metadata:
+        filename = item["filename"]
+        if filename not in document_map:
+            document_map[filename] = {
+                "filename": filename,
+                "filetype": item.get("filetype", ""),
+                "upload_time": item.get("upload_time", ""),
+                "chunk_count": 1
+            }
+        else:
+            document_map[filename]["chunk_count"] += 1
+    
+    # Convert to list and sort by upload time (newest first)
+    documents = list(document_map.values())
+    documents.sort(key=lambda x: x["upload_time"], reverse=True)
+    
+    return {
+        "document_count": len(documents),
+        "total_chunks": len(vector_client.metadata),
+        "documents": documents
+    }
+
+
 @router.post("/search")
 async def semantic_search(query: str, top_k: int = 5):
     """Search the vector store for relevant content"""
