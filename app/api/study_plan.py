@@ -5,8 +5,8 @@ from typing import Dict, Any, List, Optional
 from app.models import db, repository
 from app.schemas.study_plan import (
     AdvancedStudyPlanRequest,
-    StudyPlanResponse
-)
+    StudyPlanResponse, StudyPlanRequest
+    )
 from app.core.advanced_study_planner import AdvancedStudyPlanGenerator
 from app.core.personalization_engine import PersonalizationEngine
 from app.core.vector_store import get_vector_store_client
@@ -65,3 +65,28 @@ async def get_study_plan(plan_id: str, db_session = Depends(db.get_db)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving study plan: {str(e)}")
+
+# In app/api/study_plan.py
+# Simplified update to app/api/study_plan.py
+@router.post("/generate")
+async def generate_study_plan(request: StudyPlanRequest, db_session = Depends(db.get_db)):
+    """Generate a personalized study plan"""
+    try:
+        # Get factory and study planner
+        from app.core.factory import get_factory
+        factory = get_factory()
+        planner = factory.get_study_planner()
+        
+        # Generate the plan
+        plan = await planner.generate_plan(db_session, request.user_id)
+        
+        # Save to database
+        from app.models import repository
+        saved_plan = repository.create_study_plan(db_session, request.user_id, plan)
+        
+        return {
+            "plan_id": saved_plan.id,
+            "plan": plan
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating study plan: {str(e)}")

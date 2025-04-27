@@ -2,7 +2,8 @@
 from typing import Dict, Any, List
 import json
 import semantic_kernel as sk
-from semantic_kernel.skill_definition import sk_function, sk_function_context_parameter
+# Updated imports for Semantic Kernel 1.28.1
+from semantic_kernel.functions import kernel_function
 from app.core.quiz_generator import QuizGenerator
 
 class QuizSkill:
@@ -13,28 +14,9 @@ class QuizSkill:
         self.kernel = kernel
         self.quiz_gen = QuizGenerator()
     
-    @sk_function(
+    @kernel_function(
         description="Generate a quiz based on educational content",
         name="GenerateQuiz"
-    )
-    @sk_function_context_parameter(
-        name="context",
-        description="Educational content to generate quiz from"
-    )
-    @sk_function_context_parameter(
-        name="num_questions",
-        description="Number of questions to generate",
-        default_value="5"
-    )
-    @sk_function_context_parameter(
-        name="difficulty",
-        description="Difficulty level (easy, medium, hard)",
-        default_value="medium"
-    )
-    @sk_function_context_parameter(
-        name="topic",
-        description="Topic of the quiz",
-        default_value=None
     )
     async def generate_quiz(self, context: str, num_questions: str = "5", 
                           difficulty: str = "medium", topic: str = None) -> str:
@@ -55,21 +37,9 @@ class QuizSkill:
         # Convert to string format for SK
         return json.dumps(quiz_result)
     
-    @sk_function(
+    @kernel_function(
         description="Generate a quiz response for the conversation",
         name="GenerateQuizResponse"
-    )
-    @sk_function_context_parameter(
-        name="input",
-        description="User's input message"
-    )
-    @sk_function_context_parameter(
-        name="context",
-        description="Retrieved context about the topic"
-    )
-    @sk_function_context_parameter(
-        name="history",
-        description="Conversation history"
     )
     async def generate_quiz_response(self, input: str, context: str, history: str) -> str:
         """Generate a conversational response for quiz requests"""
@@ -126,14 +96,23 @@ class SKQuizGenerator(QuizGenerator):
     def __init__(self):
         """Initialize the SK quiz generator"""
         super().__init__()
-        # Get the kernel
-        from app.core.sk.kernel_factory import get_kernel
-        self.kernel = get_kernel()
+        # Defer the kernel import until it's actually needed
+        self.kernel = None
+    
+    def _ensure_kernel(self):
+        """Lazy-load the kernel only when needed"""
+        if self.kernel is None:
+            # Import here to avoid circular dependency
+            from app.core.sk.kernel_factory import get_kernel
+            self.kernel = get_kernel()
     
     async def generate_quiz(self, context: str, num_questions: int = 5,
                           difficulty: str = "medium", topic: str = None,
                           client=None, model_name: str = None) -> Dict[str, Any]:
         """Generate a quiz using Semantic Kernel"""
+        # Ensure kernel is loaded
+        self._ensure_kernel()
+        
         # Create variables for the function
         context_variables = sk.ContextVariables()
         context_variables["context"] = context

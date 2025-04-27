@@ -2,7 +2,8 @@
 from typing import Dict, Any, List
 import json
 import semantic_kernel as sk
-from semantic_kernel.skill_definition import sk_function, sk_function_context_parameter
+# Updated imports for Semantic Kernel 1.28.1
+from semantic_kernel.functions import kernel_function
 from app.core.flashcard_generator import FlashcardGenerator
 
 class FlashcardSkill:
@@ -13,23 +14,9 @@ class FlashcardSkill:
         self.kernel = kernel
         self.flashcard_gen = FlashcardGenerator()
     
-    @sk_function(
+    @kernel_function(
         description="Generate flashcards based on educational content",
         name="GenerateFlashcards"
-    )
-    @sk_function_context_parameter(
-        name="context",
-        description="Educational content to generate flashcards from"
-    )
-    @sk_function_context_parameter(
-        name="num_cards",
-        description="Number of flashcards to generate",
-        default_value="8"
-    )
-    @sk_function_context_parameter(
-        name="topic",
-        description="Topic of the flashcards",
-        default_value=None
     )
     async def generate_flashcards(self, context: str, num_cards: str = "8", 
                                 topic: str = None) -> str:
@@ -49,21 +36,9 @@ class FlashcardSkill:
         # Convert to string format for SK
         return json.dumps(flashcard_result)
     
-    @sk_function(
+    @kernel_function(
         description="Generate a flashcard response for the conversation",
         name="GenerateFlashcardResponse"
-    )
-    @sk_function_context_parameter(
-        name="input",
-        description="User's input message"
-    )
-    @sk_function_context_parameter(
-        name="context",
-        description="Retrieved context about the topic"
-    )
-    @sk_function_context_parameter(
-        name="history",
-        description="Conversation history"
     )
     async def generate_flashcard_response(self, input: str, context: str, history: str) -> str:
         """Generate a conversational response for flashcard requests"""
@@ -117,14 +92,23 @@ class SKFlashcardGenerator(FlashcardGenerator):
     def __init__(self):
         """Initialize the SK flashcard generator"""
         super().__init__()
-        # Get the kernel
-        from app.core.sk.kernel_factory import get_kernel
-        self.kernel = get_kernel()
+        # Defer the kernel import until it's actually needed
+        self.kernel = None
+    
+    def _ensure_kernel(self):
+        """Lazy-load the kernel only when needed"""
+        if self.kernel is None:
+            # Import here to avoid circular dependency
+            from app.core.sk.kernel_factory import get_kernel
+            self.kernel = get_kernel()
     
     async def generate_flashcards(self, context: str, num_cards: int = 8,
                                 topic: str = None, client=None, 
                                 model_name: str = None) -> Dict[str, Any]:
         """Generate flashcards using Semantic Kernel"""
+        # Ensure kernel is loaded
+        self._ensure_kernel()
+        
         # Create variables for the function
         context_variables = sk.ContextVariables()
         context_variables["context"] = context

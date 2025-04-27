@@ -3,9 +3,8 @@ from typing import Dict, Any, List
 import os
 import json
 import semantic_kernel as sk
-from semantic_kernel.planning.sequential_planner import SequentialPlanner
+from semantic_kernel.planners.sequential_planner import SequentialPlanner
 from app.core.message_processor import MessageProcessor
-from app.core.sk.kernel_factory import get_kernel
 
 class SKMessageProcessor(MessageProcessor):
     """Semantic Kernel implementation of MessageProcessor"""
@@ -13,12 +12,20 @@ class SKMessageProcessor(MessageProcessor):
     def __init__(self):
         """Initialize the SK message processor"""
         super().__init__()
-        # Get the SK kernel
-        self.kernel = get_kernel()
-        # Register skills (will be done later)
-        self._register_skills()
-        # Create planner
-        self.planner = SequentialPlanner(self.kernel)
+        # Defer the kernel import until it's actually needed
+        self.kernel = None
+        self.planner = None
+        
+    def _ensure_kernel(self):
+        """Lazy-load the kernel and initialize components only when needed"""
+        if self.kernel is None:
+            # Import here to avoid circular dependency
+            from app.core.sk.kernel_factory import get_kernel
+            self.kernel = get_kernel()
+            # Register skills
+            self._register_skills()
+            # Create planner
+            self.planner = SequentialPlanner(self.kernel)
     
     def _register_skills(self):
         """Register all required skills with the kernel"""
@@ -34,6 +41,9 @@ class SKMessageProcessor(MessageProcessor):
     async def process_message(self, user_id: str, message: str, mode: str = "chat", 
                              vector_search_client=None) -> Dict[str, Any]:
         """Process a message using Semantic Kernel"""
+        # Ensure kernel is loaded and components are initialized
+        self._ensure_kernel()
+        
         # Get conversation history for context
         history = self.conversation_history.get(user_id, [])
         formatted_history = self._format_history(history)

@@ -1,7 +1,8 @@
 # app/core/sk/skills/tutor_skill.py
 from typing import Dict, Any, List
 import semantic_kernel as sk
-from semantic_kernel.skill_definition import sk_function, sk_function_context_parameter
+# Updated imports for Semantic Kernel 1.28.1
+from semantic_kernel.functions import kernel_function
 from app.core.tutoring import TutoringSessionManager
 
 class TutorSkill:
@@ -12,26 +13,9 @@ class TutorSkill:
         self.kernel = kernel
         self.tutor_manager = TutoringSessionManager()
     
-    @sk_function(
+    @kernel_function(
         description="Generate a tutoring response using the Socratic method",
         name="GenerateTutoringResponse"
-    )
-    @sk_function_context_parameter(
-        name="input",
-        description="User's question or statement"
-    )
-    @sk_function_context_parameter(
-        name="context",
-        description="Educational content for context"
-    )
-    @sk_function_context_parameter(
-        name="history",
-        description="Conversation history"
-    )
-    @sk_function_context_parameter(
-        name="user_id",
-        description="User ID for session tracking",
-        default_value="default_user"
     )
     async def generate_tutoring_response(self, input: str, context: str, 
                                       history: str, user_id: str = "default_user") -> str:
@@ -89,9 +73,15 @@ class SKTutoringManager(TutoringSessionManager):
     def __init__(self):
         """Initialize the SK tutoring manager"""
         super().__init__()
-        # Get the kernel
-        from app.core.sk.kernel_factory import get_kernel
-        self.kernel = get_kernel()
+        # Defer the kernel import until it's actually needed
+        self.kernel = None
+    
+    def _ensure_kernel(self):
+        """Lazy-load the kernel only when needed"""
+        if self.kernel is None:
+            # Import here to avoid circular dependency
+            from app.core.sk.kernel_factory import get_kernel
+            self.kernel = get_kernel()
 
 def register_tutor_skill(kernel: sk.Kernel):
     """Register the tutor skill with the kernel"""

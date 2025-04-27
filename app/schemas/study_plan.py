@@ -60,3 +60,9 @@ class StudyPlanInsightResponse(BaseModel):
     learning_pattern_insights: List[Dict[str, Any]]
     most_productive_times: Optional[Dict[str, Any]] = None
     completion_rate: Optional[float] = None
+
+# Add to app/schemas/study_plan.py (it already exists in your repo)
+class StudyPlanRequest(BaseModel):
+    user_id: str
+    days: Optional[int] = 7
+    topic_focus: Optional[str] = None

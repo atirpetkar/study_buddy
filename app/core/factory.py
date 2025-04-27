@@ -12,15 +12,39 @@ from app.core.study_planner import StudyPlanGenerator
 
 # Import SK implementations (will be created)
 try:
-    from app.core.sk.connectors.processor_adapter import SKMessageProcessor
-    from app.core.sk.skills.quiz_skill import SKQuizGenerator
-    from app.core.sk.skills.flashcard_skill import SKFlashcardGenerator
-    from app.core.sk.skills.tutor_skill import SKTutoringManager
-    from app.core.sk.skills.personalization_skill import SKPersonalizationEngine
-    from app.core.sk.planners.study_planner import SKStudyPlanGenerator
+    try:
+        from app.core.sk.connectors.processor_adapter import SKMessageProcessor
+    except ImportError:
+        
+        raise ImportError("SKMessageProcessor not found. Ensure the SK module is installed and available.")
+    try:
+        from app.core.sk.skills.quiz_skill import SKQuizGenerator
+    except ImportError:
+        raise ImportError("SKQuizGenerator not found. Ensure the SK module is installed and available.")
+    try:
+        from app.core.sk.skills.flashcard_skill import SKFlashcardGenerator
+    except ImportError:
+        raise ImportError("SKFlashcardGenerator not found. Ensure the SK module is installed and available.")
+    try:
+        from app.core.sk.skills.tutor_skill import SKTutoringManager
+    except ImportError:
+        raise ImportError("SKTutoringManager not found. Ensure the SK module is installed and available.")
+    try:
+        from app.core.sk.skills.personalization_skill import SKPersonalizationEngine
+    except ImportError:
+        raise ImportError("SKPersonalizationEngine not found. Ensure the SK module is installed and available.")
+    try:
+        from app.core.sk.planners.study_planner import SKStudyPlanGenerator
+    except ImportError:
+        raise ImportError("SKStudyPlanGenerator not found. Ensure the SK module is installed and available.")
     SK_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    print(f"SK module not available: {e}")
+    # print("SK module not available")
     SK_AVAILABLE = False
+
+from dotenv import load_dotenv
+load_dotenv()
 
 class StudyBuddyFactory:
     """Factory for creating Study Buddy components with optional SK integration"""
@@ -29,6 +53,8 @@ class StudyBuddyFactory:
         """Initialize the factory"""
         # Check for environment toggle
         self.use_sk = os.getenv("USE_SK", "false").lower() == "true"
+        print("USE_SK=>", os.getenv("USE_SK"))
+        print("self.use_sk=>", self.use_sk)
         # Fall back to direct implementation if SK is not available
         if self.use_sk and not SK_AVAILABLE:
             self.use_sk = False
@@ -67,7 +93,11 @@ class StudyBuddyFactory:
     def get_study_planner(self) -> StudyPlanGenerator:
         """Get the appropriate study planner implementation"""
         if self.use_sk and SK_AVAILABLE:
-            return SKStudyPlanGenerator()
+            try:
+                return SKStudyPlanGenerator()
+            except Exception as e:
+                print(f"Error creating SK study planner: {e}, falling back to direct implementation")
+                return StudyPlanGenerator()
         return StudyPlanGenerator()
 
 # Create singleton instance
