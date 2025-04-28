@@ -4,6 +4,8 @@ import json
 import semantic_kernel as sk
 # Updated imports for Semantic Kernel 1.28.1
 from semantic_kernel.functions import kernel_function
+from semantic_kernel.contents.chat_history import ChatHistory
+from semantic_kernel.connectors.ai.prompt_execution_settings import PromptExecutionSettings
 from app.core.flashcard_generator import FlashcardGenerator
 
 class FlashcardSkill:
@@ -45,19 +47,22 @@ class FlashcardSkill:
         # Get chat service for LLM interactions
         chat_service = self.kernel.get_service("github")
         
-        # Parse the request to determine parameters
-        chat_completion = await chat_service.complete_chat_async(
-            sk.ChatHistory([
-                sk.ChatMessage.system_message(
-                    "You are a flashcard parameter extractor. Extract the parameters for flashcard generation " +
-                    "from the user's message. Return a JSON with num_cards and topic."
-                ),
-                sk.ChatMessage.user_message(input)
-            ])
-        )
+        # Parse the request to determine parameters - updated for SK 1.28.1
+        system_prompt = "You are a flashcard parameter extractor. Extract the parameters for flashcard generation from the user's message. Return a JSON with num_cards and topic."
+        
+        # Create chat history for parameter extraction
+        param_chat_history = ChatHistory()
+        param_chat_history.add_system_message(system_prompt)
+        param_chat_history.add_user_message(input)
+        
+        # Create settings - using PromptExecutionSettings for SK 1.28.1
+        settings = PromptExecutionSettings()
+        
+        # Get parameters
+        chat_completion = await chat_service.get_chat_message_content(param_chat_history, settings)
         
         try:
-            params = json.loads(chat_completion.result)
+            params = json.loads(chat_completion.content)
         except:
             # Default parameters if extraction fails
             params = {
@@ -133,4 +138,5 @@ class SKFlashcardGenerator(FlashcardGenerator):
 def register_flashcard_skill(kernel: sk.Kernel):
     """Register the flashcard skill with the kernel"""
     skill = FlashcardSkill(kernel)
-    kernel.add_skill(skill, skill_name="FlashcardSkill")
+    # Updated for Semantic Kernel 1.28.1
+    kernel.add_plugin(skill, plugin_name="FlashcardSkill")

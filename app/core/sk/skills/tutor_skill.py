@@ -3,6 +3,8 @@ from typing import Dict, Any, List
 import semantic_kernel as sk
 # Updated imports for Semantic Kernel 1.28.1
 from semantic_kernel.functions import kernel_function
+from semantic_kernel.contents.chat_history import ChatHistory
+from semantic_kernel.connectors.ai.prompt_execution_settings import PromptExecutionSettings
 from app.core.tutoring import TutoringSessionManager
 
 class TutorSkill:
@@ -28,9 +30,8 @@ class TutorSkill:
         full_context = context + "\n\n" + session_context if context else session_context
         
         # Create the prompt
-        prompt = f"""
-        You are Study Buddy in Tutor Mode, an expert tutor who uses the Socratic method to guide students toward understanding.
-
+        system_message = "You are Study Buddy in Tutor Mode, an expert tutor who uses the Socratic method."
+        user_message = f"""
         Your tutoring follows this structured approach:
         1. IDENTIFY: Understand what the student knows and doesn't know
         2. QUESTION: Ask targeted questions to lead them toward discovery
@@ -52,15 +53,17 @@ class TutorSkill:
         # Get the LLM service
         chat_service = self.kernel.get_service("github")
         
-        # Generate the response
-        chat_history = sk.ChatHistory()
-        chat_history.add_system_message(
-            "You are Study Buddy in Tutor Mode, an expert tutor who uses the Socratic method."
-        )
-        chat_history.add_user_message(prompt)
+        # Create chat history
+        chat_history = ChatHistory()
+        chat_history.add_system_message(system_message)
+        chat_history.add_user_message(user_message)
         
-        completion = await chat_service.complete_chat_async(chat_history)
-        response = completion.result
+        # Create settings - using PromptExecutionSettings for SK 1.28.1
+        settings = PromptExecutionSettings()
+        
+        # Generate the response
+        completion = await chat_service.get_chat_message_content(chat_history, settings)
+        response = completion.content if completion else "I'm sorry, I couldn't generate a tutoring response."
         
         # Update tutoring session
         session.analyze_response(response)
@@ -86,4 +89,5 @@ class SKTutoringManager(TutoringSessionManager):
 def register_tutor_skill(kernel: sk.Kernel):
     """Register the tutor skill with the kernel"""
     skill = TutorSkill(kernel)
-    kernel.add_skill(skill, skill_name="TutorSkill")
+    # Updated for Semantic Kernel 1.28.1
+    kernel.add_plugin(skill, plugin_name="TutorSkill")

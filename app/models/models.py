@@ -104,3 +104,12 @@ class FlashcardReview(Base):
     confidence = Column(Integer)  # 1-5 rating
     next_review_at = Column(DateTime)
     reviewed_at = Column(DateTime, default=datetime.utcnow)
+
+# Add to app/models/models.py
+class StudySession(Base):
+    __tablename__ = 'study_sessions'
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey('users.id'))
+    content = Column(Text)  # JSON stored as string
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

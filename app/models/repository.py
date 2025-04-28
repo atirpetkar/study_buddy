@@ -509,3 +509,37 @@ def get_study_plan_progress(db, user_id: str, plan_id: str = None):
             continue
     
     return results
+
+# Add to app/models/repository.py
+def create_study_session(db, user_id: str, content: str):
+    """Create a new study session"""
+    import uuid
+    session = models.StudySession(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        content=content
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return session
+
+def get_study_session(db, session_id: str):
+    """Get a study session by ID"""
+    return db.query(models.StudySession).filter(models.StudySession.id == session_id).first()
+
+def update_study_session(db, session_id: str, content: str):
+    """Update a study session"""
+    session = db.query(models.StudySession).filter(models.StudySession.id == session_id).first()
+    if session:
+        session.content = content
+        session.updated_at = datetime.datetime.utcnow()
+        db.commit()
+        db.refresh(session)
+    return session
+
+def get_user_study_sessions(db, user_id: str, limit: int = 10):
+    """Get study sessions for a user"""
+    return db.query(models.StudySession).filter(
+        models.StudySession.user_id == user_id
+    ).order_by(models.StudySession.created_at.desc()).limit(limit).all()

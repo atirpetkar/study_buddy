@@ -11,7 +11,9 @@ class KernelFactory:
         self._kernel: sk.Kernel | None = None
         self._api_key   = os.getenv("GITHUB_TOKEN")
         self._endpoint  = os.getenv("ENDPOINT", "https://models.inference.ai.azure.com")
-        self._model     = os.getenv("GITHUB_MODEL", "openai/gpt-4o")
+        # Get model name and ensure it doesn't have the "openai/" prefix for SK 1.28.1 compatibility
+        model_env = os.getenv("GITHUB_MODEL", "openai/gpt-4o")
+        self._model = model_env.split("/")[-1] if "/" in model_env else model_env
 
     def get_kernel(self) -> sk.Kernel:
         if self._kernel is None:
@@ -20,15 +22,14 @@ class KernelFactory:
 
     def _build_kernel(self) -> sk.Kernel:
         k = sk.Kernel()                                    # still valid; builder is optional
-        deployment = self._model.split("/")[-1]
         svc = AzureChatCompletion(                         # new class
             service_id="github",
-            deployment_name=deployment,
+            deployment_name=self._model,  # Already cleaned up in __init__
             endpoint=self._endpoint,
             api_key=self._api_key,
         )
         k.add_service(svc)
-        print(f"Semantic Kernel initialised with: {deployment}")
+        print(f"Semantic Kernel initialised with: {self._model}")
         return k
 
 _kernel_factory = KernelFactory()

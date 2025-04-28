@@ -24,8 +24,8 @@ class SKMessageProcessor(MessageProcessor):
             self.kernel = get_kernel()
             # Register skills
             self._register_skills()
-            # Create planner
-            self.planner = SequentialPlanner(self.kernel)
+            # Create planner with service_id parameter for SK 1.28.1
+            self.planner = SequentialPlanner(self.kernel, service_id="github")
     
     def _register_skills(self):
         """Register all required skills with the kernel"""
@@ -33,10 +33,12 @@ class SKMessageProcessor(MessageProcessor):
         from app.core.sk.skills.quiz_skill import register_quiz_skill
         from app.core.sk.skills.flashcard_skill import register_flashcard_skill
         from app.core.sk.skills.tutor_skill import register_tutor_skill
+        from app.core.sk.skills.chat_skill import register_chat_skill
         
         register_quiz_skill(self.kernel)
         register_flashcard_skill(self.kernel)
         register_tutor_skill(self.kernel)
+        register_chat_skill(self.kernel)
     
     async def process_message(self, user_id: str, message: str, mode: str = "chat", 
                              vector_search_client=None) -> Dict[str, Any]:
@@ -60,13 +62,15 @@ class SKMessageProcessor(MessageProcessor):
         
         try:
             # Use SK's planning capabilities to process the message
-            # Create variables for the planner
-            self.kernel.create_new_context()
-            context_variables = sk.ContextVariables()
-            context_variables["input"] = message
-            context_variables["mode"] = mode
-            context_variables["history"] = formatted_history
-            context_variables["context"] = context
+            # Create variables for the planner - using KernelArguments for SK 1.28.1
+            from semantic_kernel.functions import KernelArguments
+            arguments = KernelArguments(
+                input=message,
+                mode=mode,
+                history=formatted_history,
+                context=context,
+                user_id=user_id  # Added user_id for functions that need it
+            )
             
             # Create a plan and execute it
             if mode == "chat":
@@ -80,10 +84,13 @@ class SKMessageProcessor(MessageProcessor):
             else:
                 function_name = "ChatSkill.GenerateResponse"  # Default to chat
             
-            # Get the function
-            function = self.kernel.skills.get_function(function_name)
-            # Execute the function
-            result = await self.kernel.run_async(function, input_vars=context_variables)
+            # Get the function and execute it - updated for SK 1.28.1 API
+            plugin_name, function_name = function_name.split('.')
+            result = await self.kernel.invoke(
+                function_name=function_name,
+                plugin_name=plugin_name,
+                arguments=arguments
+            )
             response_text = str(result)
             
             # Update conversation history

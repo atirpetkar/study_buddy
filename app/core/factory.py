@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 from app.core.message_processor import MessageProcessor
 from app.core.quiz_generator import QuizGenerator
 from app.core.flashcard_generator import FlashcardGenerator
+from app.core.session_orchestrator import SessionOrchestrator
 from app.core.tutoring import TutoringSessionManager
 from app.core.personalization_engine import PersonalizationEngine
 from app.core.study_planner import StudyPlanGenerator
@@ -37,6 +38,11 @@ try:
         from app.core.sk.planners.study_planner import SKStudyPlanGenerator
     except ImportError:
         raise ImportError("SKStudyPlanGenerator not found. Ensure the SK module is installed and available.")
+    try:
+        from app.core.sk.orchestrator.session_orchestrator import SKSessionOrchestrator
+        # Add this after other SK imports
+    except ImportError:
+        print("SK Session Orchestrator not available")
     SK_AVAILABLE = True
 except ImportError as e:
     print(f"SK module not available: {e}")
@@ -99,6 +105,17 @@ class StudyBuddyFactory:
                 print(f"Error creating SK study planner: {e}, falling back to direct implementation")
                 return StudyPlanGenerator()
         return StudyPlanGenerator()
+    
+    # Add to the StudyBuddyFactory class
+    def get_session_orchestrator(self) -> SessionOrchestrator:
+        """Get the appropriate session orchestrator implementation"""
+        if self.use_sk and SK_AVAILABLE:
+            try:
+                return SKSessionOrchestrator()
+            except Exception as e:
+                print(f"Error creating SK session orchestrator: {e}, falling back to direct implementation")
+                return SessionOrchestrator()
+        return SessionOrchestrator()
 
 # Create singleton instance
 _factory = StudyBuddyFactory()
