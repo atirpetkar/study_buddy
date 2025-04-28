@@ -1,0 +1,273 @@
+The Study Buddy app is an AI-powered learning assistant that:
+
+Processes uploaded documents
+Creates personalized quizzes and flashcards
+Offers interactive tutoring sessions
+Tracks learning progress
+Provides guided study sessions with varied learning activities
+
+The backend is already built with FastAPI and uses advanced AI models to generate educational content.
+Core API Endpoints & Examples
+1. Document Management
+Upload Documents: POST /vectorstore/upload
+// Input: FormData with files
+const formData = new FormData();
+formData.append('files', fileObject);
+
+// Output Example:
+{
+  "status": "success",
+  "total_chunks": 24,
+  "files": [
+    {
+      "file": "machine_learning.pdf",
+      "chunks": 24,
+      "metadatas": [{"chunk_index": 0, "length": 1087}, ...]
+    }
+  ]
+}
+View Documents: GET /vectorstore/documents
+// Output Example:
+{
+  "document_count": 3,
+  "total_chunks": 67,
+  "documents": [
+    {
+      "filename": "machine_learning.pdf",
+      "filetype": "pdf",
+      "upload_time": "2025-04-25T14:30:22",
+      "chunk_count": 24
+    },
+    // More documents...
+  ]
+}
+2. Study Sessions (Main Feature)
+Create Quick Session: POST /session/quick
+// Input:
+{
+  "user_id": "user123",
+  "topic": "Machine Learning Basics",
+  "duration_minutes": 15
+}
+
+// Output Example:
+{
+  "session_id": "sess_abc123",
+  "user_id": "user123",
+  "topic": "Machine Learning Basics",
+  "duration_minutes": 15,
+  "created_at": "2025-04-27T10:15:00",
+  "activities": [
+    {
+      "type": "introduction",
+      "duration_minutes": 3,
+      "description": "Introduction to Machine Learning Basics",
+      "parameters": {"topic": "Machine Learning Basics"}
+    },
+    {
+      "type": "flashcard",
+      "duration_minutes": 5,
+      "description": "Review key concepts in Machine Learning Basics",
+      "parameters": {"num_cards": 3, "topic": "Machine Learning Basics"}
+    },
+    {
+      "type": "quiz",
+      "duration_minutes": 5,
+      "description": "Test your knowledge of Machine Learning Basics",
+      "parameters": {"num_questions": 2, "difficulty": "medium", "topic": "Machine Learning Basics"}
+    },
+    {
+      "type": "summary",
+      "duration_minutes": 2,
+      "description": "Summarize what you've learned about Machine Learning Basics",
+      "parameters": {"topic": "Machine Learning Basics"}
+    }
+  ],
+  "status": "planned",
+  "current_activity_index": 0
+}
+Execute Activity: POST /session/execute
+// Input:
+{
+  "session_id": "sess_abc123",
+  "activity_index": 0
+}
+
+// Output Example (for introduction activity):
+{
+  "session_id": "sess_abc123",
+  "activity": {
+    "type": "introduction",
+    "duration_minutes": 3,
+    "description": "Introduction to Machine Learning Basics",
+    "parameters": {"topic": "Machine Learning Basics"}
+  },
+  "result": "Machine Learning is a subset of artificial intelligence that provides systems the ability to automatically learn and improve from experience without being explicitly programmed...",
+  "next_activity_index": 1,
+  "status": "in_progress"
+}
+
+// Output Example (for quiz activity):
+{
+  "session_id": "sess_abc123",
+  "activity": {
+    "type": "quiz",
+    "duration_minutes": 5,
+    "description": "Test your knowledge of Machine Learning Basics",
+    "parameters": {"num_questions": 2, "difficulty": "medium", "topic": "Machine Learning Basics"}
+  },
+  "result": "Question 1: What is supervised learning?\nA. Learning without labeled data\nB. Learning with labeled data\nC. Learning through trial and error\nD. Learning without a teacher\n\nQuestion 2: Which of these is NOT a type of machine learning?\nA. Supervised learning\nB. Unsupervised learning\nC. Reinforcement learning\nD. Reflective learning",
+  "next_activity_index": 2,
+  "status": "in_progress"
+}
+Get Sessions: GET /session/user/{user_id}
+// Output Example:
+[
+  {
+    "session_id": "sess_abc123",
+    "user_id": "user123",
+    "topic": "Machine Learning Basics",
+    "duration_minutes": 15,
+    "created_at": "2025-04-27T10:15:00",
+    "status": "completed",
+    "activities": [/* activities array */]
+  },
+  // More sessions...
+]
+3. Learning Content
+Generate Quiz: POST /quiz/generate
+// Input:
+{
+  "user_id": "user123",
+  "topic": "Neural Networks",
+  "num_questions": 3,
+  "difficulty": "medium",
+  "save_quiz": true
+}
+
+// Output Example:
+{
+  "id": "quiz_xyz789",
+  "questions": [
+    {
+      "id": "q1",
+      "text": "What is a neural network?",
+      "options": {
+        "A": "A computer network with high security",
+        "B": "A mathematical model inspired by the human brain",
+        "C": "A physical network of computers",
+        "D": "A type of computer virus"
+      },
+      "correct_answer": "B",
+      "explanation": "Neural networks are mathematical models inspired by the human brain's structure and function."
+    },
+    // More questions...
+  ],
+  "metadata": {
+    "topic": "Neural Networks",
+    "difficulty": "medium",
+    "sources": ["machine_learning.pdf"]
+  }
+}
+Generate Flashcards: POST /flashcard/generate
+// Input:
+{
+  "user_id": "user123",
+  "topic": "Supervised Learning",
+  "num_cards": 3,
+  "save_flashcards": true
+}
+
+// Output Example:
+{
+  "id": "flashcard_set_123",
+  "cards": [
+    {
+      "id": "card1",
+      "front": "What is supervised learning?",
+      "back": "Learning from labeled training data where the model is taught what correct outputs should look like."
+    },
+    // More cards...
+  ],
+  "metadata": {
+    "topic": "Supervised Learning",
+    "card_count": 3,
+    "sources": ["machine_learning.pdf"]
+  }
+}
+4. Chat & Tutoring
+Chat: POST /chat/chat
+// Input:
+{
+  "user_id": "user123",
+  "message": "Explain how neural networks learn",
+  "mode": "tutor"  // Options: "chat", "tutor", "quiz", "flashcard"
+}
+
+// Output Example:
+{
+  "response": "Let's think about how neural networks learn. Can you tell me what you already know about how they process information?",
+  "context_used": ["machine_learning.pdf", "neural_networks.md"]
+}
+UI Screens to Implement
+
+Home Dashboard
+
+User progress summary
+Quick action buttons (start session, create quiz, etc.)
+Recent activity timeline
+Recommended topics based on progress
+
+
+Document Library
+
+Upload interface with drag-and-drop
+List of uploaded documents
+Actions for each document (generate content, delete)
+
+
+Study Session Player
+
+Session header (topic, progress, timer)
+Current activity display (adapts to activity type)
+Activity navigation controls
+Session summary on completion
+
+
+Quiz Interface
+
+Quiz creation form
+Question display with multiple choice options
+Progress indicator
+Results screen with explanations
+
+
+Flashcard Interface
+
+Card display with flip animation
+Confidence rating buttons (1-5)
+Navigation between cards
+Summary after completion
+
+
+Chat/Tutoring Interface
+
+Message history
+Input field
+Mode selector
+Context visualization (optional)
+
+
+
+Implementation Priorities
+
+Start with the Document Upload and Study Session Player screens
+Then implement Quiz and Flashcard interfaces
+Finally add the Dashboard and Chat Interface
+
+The core user flow should be:
+
+Upload document
+Create a quick study session
+Complete the sequence of learning activities
+Review progress
