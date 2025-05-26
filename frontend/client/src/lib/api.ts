@@ -1,4 +1,5 @@
 import { apiRequest } from './queryClient';
+import { API_BASE_URL } from './config';
 
 // Document Management
 export const uploadDocuments = async (files: FileList) => {
@@ -7,7 +8,7 @@ export const uploadDocuments = async (files: FileList) => {
     formData.append('files', files[i]);
   }
   
-  const response = await fetch('/api/vectorstore/upload', {
+  const response = await fetch(`${API_BASE_URL}/vectorstore/upload`, {
     method: 'POST',
     body: formData,
     credentials: 'include',
@@ -22,39 +23,47 @@ export const uploadDocuments = async (files: FileList) => {
 };
 
 export const getDocuments = async () => {
-  const response = await fetch('/api/vectorstore/documents', {
-    credentials: 'include',
-  });
-  
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(error || 'Failed to get documents');
-  }
-  
+  const response = await apiRequest('GET', '/vectorstore/documents');
   return response.json();
 };
 
 // Study Sessions
 export const createQuickSession = async (data: { user_id: string; topic: string; duration_minutes: number }) => {
-  const response = await apiRequest('POST', '/api/session/quick', data);
-  return response.json();
+  try {
+    console.log("Creating session with data:", data);
+    console.log("API request URL:", `${API_BASE_URL}/session/quick`);
+    
+    const response = await apiRequest('POST', '/session/quick', data);
+    console.log("API response status:", response.status);
+    
+    const responseData = await response.json();
+    console.log("Session creation full response:", responseData);
+    
+    if (!response.ok) {
+      console.error("Error response from server:", responseData);
+      throw new Error(responseData.detail || 'Failed to create session');
+    }
+    
+    // Verify the response has the expected format
+    if (!responseData.session_id) {
+      console.error("Missing session_id in response:", responseData);
+      throw new Error('Invalid response format: missing session_id');
+    }
+    
+    return responseData;
+  } catch (error) {
+    console.error("Error creating session:", error);
+    throw error;
+  }
 };
 
 export const executeActivity = async (data: { session_id: string; activity_index: number }) => {
-  const response = await apiRequest('POST', '/api/session/execute', data);
+  const response = await apiRequest('POST', '/session/execute', data);
   return response.json();
 };
 
 export const getUserSessions = async (user_id: string) => {
-  const response = await fetch(`/api/session/user/${user_id}`, {
-    credentials: 'include',
-  });
-  
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(error || 'Failed to get user sessions');
-  }
-  
+  const response = await apiRequest('GET', `/session/user/${user_id}`);
   return response.json();
 };
 
@@ -66,20 +75,12 @@ export const generateQuiz = async (data: {
   difficulty: string;
   save_quiz?: boolean;
 }) => {
-  const response = await apiRequest('POST', '/api/quiz/generate', data);
+  const response = await apiRequest('POST', '/quiz/generate', data);
   return response.json();
 };
 
 export const getUserQuizzes = async (user_id: string) => {
-  const response = await fetch(`/api/quiz/user/${user_id}`, {
-    credentials: 'include',
-  });
-  
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(error || 'Failed to get user quizzes');
-  }
-  
+  const response = await apiRequest('GET', `/quiz/user/${user_id}`);
   return response.json();
 };
 
@@ -89,7 +90,7 @@ export const generateFlashcards = async (data: {
   num_cards: number;
   save_flashcards?: boolean;
 }) => {
-  const response = await apiRequest('POST', '/api/flashcard/generate', data);
+  const response = await apiRequest('POST', '/flashcard/generate', data);
   return response.json();
 };
 
@@ -99,6 +100,6 @@ export const sendChatMessage = async (data: {
   message: string;
   mode: 'chat' | 'tutor' | 'quiz' | 'flashcard';
 }) => {
-  const response = await apiRequest('POST', '/api/chat/chat', data);
+  const response = await apiRequest('POST', '/chat/chat', data);
   return response.json();
 };
