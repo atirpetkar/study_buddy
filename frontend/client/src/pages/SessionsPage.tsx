@@ -6,10 +6,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Plus } from "lucide-react";
 import SessionActivity from "@/components/sessions/SessionActivity";
 import { getUserSessions } from "@/lib/api";
+import { DEFAULT_USER_ID } from "@/lib/config";
 
 export default function SessionsPage() {
   const [_, setLocation] = useLocation();
-  const userId = "user123"; // In a real app, this would come from auth
+  const userId = DEFAULT_USER_ID;
   
   const { data, isLoading, error } = useQuery({
     queryKey: ['/api/session/user', userId],

@@ -1,6 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { useAuth } from "../../context/AuthContext";
 
 const navItems = [
   { name: "Dashboard", path: "/", icon: "ri-dashboard-line" },
@@ -12,7 +13,14 @@ const navItems = [
 ];
 
 export default function Sidebar() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+  const { user } = useAuth();
+
+  // Removed logout functionality since we're bypassing authentication
+  // const handleLogout = () => {
+  //   logout();
+  //   setLocation('/login');
+  // };
 
   return (
     <aside className="hidden md:flex md:flex-col md:w-64 bg-white border-r border-gray-200 transition-all duration-300">
@@ -27,9 +35,9 @@ export default function Sidebar() {
       <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
         {navItems.map((item) => (
           <Link key={item.path} href={item.path}>
-            <a
+            <div
               className={cn(
-                "flex items-center px-4 py-3 rounded-md",
+                "flex items-center px-4 py-3 rounded-md cursor-pointer",
                 location === item.path
                   ? "text-gray-800 bg-gray-100"
                   : "text-gray-600 hover:bg-gray-100"
@@ -37,7 +45,7 @@ export default function Sidebar() {
             >
               <i className={cn(item.icon, "mr-3", location === item.path ? "text-primary" : "")}></i>
               <span>{item.name}</span>
-            </a>
+            </div>
           </Link>
         ))}
       </nav>
@@ -45,12 +53,19 @@ export default function Sidebar() {
         <div className="flex items-center">
           <Avatar className="h-10 w-10">
             <AvatarImage src="https://github.com/shadcn.png" alt="User" />
-            <AvatarFallback>US</AvatarFallback>
+            <AvatarFallback>
+              {user?.email?.substring(0, 2).toUpperCase() || 'QW'}
+            </AvatarFallback>
           </Avatar>
           <div className="ml-3">
-            <p className="text-sm font-medium text-gray-800">Alex Johnson</p>
-            <p className="text-xs text-gray-500">alex@example.com</p>
+            <p className="text-sm font-medium text-gray-800">
+              {user?.email?.split('@')[0] || 'qwe'}
+            </p>
+            <p className="text-xs text-gray-500">
+              {user?.email || 'qwe@gmail.com'}
+            </p>
           </div>
+          {/* Logout button removed */}
         </div>
       </div>
     </aside>

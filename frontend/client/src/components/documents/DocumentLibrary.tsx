@@ -2,34 +2,37 @@ import { useState } from "react";
 import DocumentUpload from "./DocumentUpload";
 import DocumentList from "./DocumentList";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getDocuments, uploadDocuments } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { documentService } from "@/lib/services/documentService";
+import { useAuth } from "@/context/AuthContext";
 
 export default function DocumentLibrary() {
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   
   const { data, isLoading, error } = useQuery({
-    queryKey: ['/api/vectorstore/documents'],
-    queryFn: getDocuments,
+    queryKey: ['documents'],
+    queryFn: documentService.getDocuments,
   });
   
   const uploadMutation = useMutation({
-    mutationFn: uploadDocuments,
+    mutationFn: documentService.uploadDocuments,
     onSuccess: () => {
       toast({
         title: "Documents Uploaded",
         description: "Your documents have been uploaded successfully.",
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/vectorstore/documents'] });
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({
         title: "Upload Failed",
         description: error.message || "There was an error uploading your documents.",
         variant: "destructive",
       });
+      console.error("Document upload error:", error);
     }
   });
   

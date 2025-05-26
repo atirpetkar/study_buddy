@@ -20,7 +20,9 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
-import { sendChatMessage } from "@/lib/api";
+import { chatService } from "@/lib/services/chatService";
+import { useAuth } from "@/context/AuthContext";
+import { DEFAULT_USER_ID } from "@/lib/config";
 
 type Message = {
   id: string;
@@ -45,6 +47,7 @@ export default function ChatInterface() {
   const [chatMode, setChatMode] = useState<ChatMode>('tutor');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
   
   // Scroll to bottom of messages
   const scrollToBottom = () => {
@@ -56,8 +59,9 @@ export default function ChatInterface() {
   }, [messages]);
   
   const chatMutation = useMutation({
-    mutationFn: sendChatMessage,
+    mutationFn: chatService.sendMessage,
     onSuccess: (data) => {
+      console.log('Chat message success response:', data);
       setMessages(prev => [
         ...prev,
         {
@@ -69,10 +73,23 @@ export default function ChatInterface() {
         }
       ]);
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      console.error('Chat interface error:', error);
+      
+      // Add error message to chat
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          sender: 'ai',
+          text: `Error: ${error.message || "Failed to send message. Please try again."}`,
+          timestamp: new Date()
+        }
+      ]);
+      
       toast({
         title: "Error",
-        description: "Failed to send message. Please try again.",
+        description: error.message || "Failed to send message. Please try again.",
         variant: "destructive",
       });
     },
@@ -91,13 +108,23 @@ export default function ChatInterface() {
     
     setMessages(prev => [...prev, newUserMessage]);
     
+    // Store the message to send
+    const messageToSend = inputMessage.trim();
+    
     // Clear input field
     setInputMessage('');
     
+    // Log what we're sending
+    console.log('Sending chat message from interface:', {
+      user_id: user?.id || DEFAULT_USER_ID,
+      message: messageToSend,
+      mode: chatMode
+    });
+    
     // Send to API
     chatMutation.mutate({
-      user_id: 'user123', // In a real app, this would come from auth
-      message: inputMessage,
+      user_id: user?.id || DEFAULT_USER_ID,
+      message: messageToSend,
       mode: chatMode,
     });
   };
@@ -170,7 +197,7 @@ export default function ChatInterface() {
             
             {message.sender === 'user' ? (
               <Avatar className="h-8 w-8 ml-3 bg-gray-300">
-                <AvatarFallback>US</AvatarFallback>
+                <AvatarFallback>{user?.email?.slice(0, 2).toUpperCase() || 'US'}</AvatarFallback>
               </Avatar>
             ) : null}
           </div>
