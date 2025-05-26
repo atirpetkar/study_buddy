@@ -12,7 +12,7 @@ from . import models
 
 # Example CRUD operation: Get user by email
 def get_user_by_email(db: Session, email: str):
-    return db.query(models.User).filter(models.User.email == email).first()
+    return db.query(models.User).filter(func.lower(models.User.email) == email.lower()).first()
 
 # Example CRUD operation: Create a new user
 def create_user(db: Session, email: str, hashed_password: str):
@@ -540,6 +540,49 @@ def update_study_session(db, session_id: str, content: str):
 
 def get_user_study_sessions(db, user_id: str, limit: int = 10):
     """Get study sessions for a user"""
-    return db.query(models.StudySession).filter(
-        models.StudySession.user_id == user_id
-    ).order_by(models.StudySession.created_at.desc()).limit(limit).all()
+    # Return empty list if user_id is None to prevent DB errors
+    if not user_id:
+        return []
+        
+    try:
+        sessions = db.query(models.StudySession).filter(
+            models.StudySession.user_id == user_id
+        ).order_by(models.StudySession.created_at.desc()).limit(limit).all()
+        
+        # Convert database objects to dictionaries with parsed JSON content
+        result = []
+        for session in sessions:
+            try:
+                # Handle case when content is None or empty
+                if not session.content:
+                    # Create minimal valid session data
+                    session_data = {
+                        "session_id": session.id,
+                        "user_id": session.user_id,
+                        "created_at": session.created_at.isoformat(),
+                        "status": "unknown"
+                    }
+                else:
+                    session_data = json.loads(session.content)
+                    
+                # Make sure the session ID is properly included in the result
+                if "session_id" not in session_data and hasattr(session, "id"):
+                    session_data["session_id"] = session.id
+                    
+                result.append(session_data)
+            except json.JSONDecodeError as e:
+                # Include a minimal valid entry instead of skipping
+                result.append({
+                    "session_id": session.id,
+                    "user_id": session.user_id,
+                    "created_at": session.created_at.isoformat() if hasattr(session, "created_at") else None,
+                    "status": "error",
+                    "error": "Invalid session data format"
+                })
+                
+        return result
+    except Exception as e:
+        # Return empty list instead of raising an exception
+        # This prevents 500 errors from affecting the frontend
+        print(f"Error in get_user_study_sessions: {str(e)}")
+        return []

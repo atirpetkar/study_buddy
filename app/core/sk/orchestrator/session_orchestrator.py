@@ -6,8 +6,12 @@ import uuid
 import semantic_kernel as sk
 from semantic_kernel.contents import ChatHistory
 from semantic_kernel.connectors.ai.prompt_execution_settings import PromptExecutionSettings
+import logging
 
 from app.core.session_orchestrator import SessionOrchestrator
+
+# Get logger for this module
+logger = logging.getLogger(__name__)
 
 class SKSessionOrchestrator(SessionOrchestrator):
     """SK implementation of the session orchestrator"""
@@ -17,25 +21,34 @@ class SKSessionOrchestrator(SessionOrchestrator):
         super().__init__()
         # Defer the kernel import until needed
         self.kernel = None
+        logger.debug("SKSessionOrchestrator initialized")
     
     def _ensure_kernel(self):
         """Ensure the kernel is initialized"""
         if self.kernel is None:
+            logger.debug("Initializing kernel for the first time")
             # Import here to avoid circular dependency
             from app.core.sk.kernel_factory import get_kernel
             self.kernel = get_kernel()
+            logger.debug("Kernel initialized successfully")
+        else:
+            logger.debug("Kernel already initialized")
     
     async def create_quick_session(self, user_id: str, topic: str, duration_minutes: int = 15, 
-                                 db = None, vector_client = None) -> Dict[str, Any]:
+                                 db = None, vector_client = None, session_id: str = None) -> Dict[str, Any]:
         """Create a quick study session using SK planning capabilities"""
+        logger.debug(f"Starting create_quick_session for user_id={user_id}, topic='{topic}', duration={duration_minutes}, session_id={session_id}")
+        
         # Ensure kernel is initialized
         self._ensure_kernel()
         
         try:
             # Get chat service for planning
+            logger.debug("Getting chat service for session planning")
             chat_service = self.kernel.get_service("github")
             
             # Create planning prompt for session
+            logger.debug("Creating planning prompt")
             planning_prompt = f"""
             You are a study session planner optimizing for effective learning in {duration_minutes} minutes.
             
@@ -67,6 +80,7 @@ class SKSessionOrchestrator(SessionOrchestrator):
             """
             
             # Create chat history and execution settings
+            logger.debug("Setting up chat history and execution settings")
             chat_history = ChatHistory()
             chat_history.add_system_message("You are a study session planner specializing in effective learning sequences.")
             chat_history.add_user_message(planning_prompt)
@@ -74,29 +88,38 @@ class SKSessionOrchestrator(SessionOrchestrator):
             execution_settings = PromptExecutionSettings()
             
             # Generate the session plan
+            logger.debug("Calling chat service to generate session plan")
             completion = await chat_service.get_chat_message_content(chat_history, settings=execution_settings)
             result = completion.content
+            logger.debug(f"Received planning response of length {len(result)}")
             
             # Parse result to extract JSON
+            logger.debug("Parsing JSON from planning response")
             import re
             json_match = re.search(r'({.*})', result.replace('\n', ' '), re.DOTALL)
             
             activities = []
             if json_match:
                 try:
+                    logger.debug("JSON pattern found, attempting to parse")
                     plan_data = json.loads(json_match.group(1))
                     activities = plan_data.get("activities", [])
-                except:
-                    # Fall back to base implementation if parsing fails
-                    return await super().create_quick_session(user_id, topic, duration_minutes, db, vector_client)
+                    logger.debug(f"Successfully parsed {len(activities)} activities")
+                except Exception as e:
+                    logger.error(f"JSON parsing error: {str(e)}")
+                    logger.debug("Falling back to base implementation due to parsing error")
+                    return await super().create_quick_session(user_id, topic, duration_minutes, db, vector_client, session_id)
             
             # If no activities were parsed, fall back to base implementation
             if not activities:
-                return await super().create_quick_session(user_id, topic, duration_minutes, db, vector_client)
+                logger.warning("No activities were parsed from the planning response")
+                logger.debug("Falling back to base implementation due to no activities")
+                return await super().create_quick_session(user_id, topic, duration_minutes, db, vector_client, session_id)
                 
             # Get context for the topic if vector_client available
             context = ""
             if vector_client:
+                logger.debug("Retrieving topic context from vector store")
                 from app.utils.context_retrieval import retrieve_topic_context
                 context_result = await retrieve_topic_context(
                     vector_client,
@@ -105,11 +128,19 @@ class SKSessionOrchestrator(SessionOrchestrator):
                     max_chunks=7
                 )
                 context = context_result.get("context", "")
+                logger.debug(f"Retrieved context of length {len(context)}")
+            else:
+                logger.debug("No vector client provided, skipping context retrieval")
             
-            # Generate session ID
-            session_id = str(uuid.uuid4())
+            # Use provided session_id or generate a new one
+            if not session_id:
+                session_id = str(uuid.uuid4())
+                logger.debug(f"Generated new session_id: {session_id}")
+            else:
+                logger.debug(f"Using provided session_id: {session_id}")
             
             # Create the full session plan
+            logger.debug("Creating the final session plan")
             plan = {
                 "session_id": session_id,
                 "user_id": user_id,
@@ -123,22 +154,29 @@ class SKSessionOrchestrator(SessionOrchestrator):
             }
             
             # Store the active session
+            logger.debug(f"Storing session {session_id} in active_sessions")
             self.active_sessions[session_id] = plan
             
             # Save to database if possible
             if db:
+                logger.debug(f"Saving session {session_id} to database")
                 from app.models import repository
                 session_record = repository.create_study_session(db, user_id, json.dumps(plan))
                 plan["record_id"] = session_record.id
+                logger.debug(f"Session saved to database with record_id: {session_record.id}")
+            else:
+                logger.debug("No database session provided, skipping database save")
             
+            logger.debug(f"Session {session_id} creation completed successfully")
             return plan
             
         except Exception as e:
-            print(f"Error creating session with SK: {e}")
+            logger.error(f"Error creating session with SK: {e}")
             import traceback
-            traceback.print_exc()
+            logger.error(traceback.format_exc())
             # Fall back to the base implementation
-            return await super().create_quick_session(user_id, topic, duration_minutes, db, vector_client)
+            logger.debug("Falling back to base implementation due to exception")
+            return await super().create_quick_session(user_id, topic, duration_minutes, db, vector_client, session_id)
     
     async def execute_activity(self, session_id: str, activity_index: int = None, 
                               db = None) -> Dict[str, Any]:

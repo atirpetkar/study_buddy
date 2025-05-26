@@ -3,6 +3,10 @@ from typing import Dict, Any, List, Optional
 import json
 import datetime
 import uuid
+import logging
+
+# Get logger for this module
+logger = logging.getLogger(__name__)
 
 class SessionOrchestrator:
     """
@@ -13,9 +17,10 @@ class SessionOrchestrator:
     def __init__(self):
         """Initialize the session orchestrator"""
         self.active_sessions = {}
+        logger.debug("SessionOrchestrator initialized")
     
     async def create_quick_session(self, user_id: str, topic: str, duration_minutes: int = 15, 
-                                 db = None, vector_client = None) -> Dict[str, Any]:
+                                 db = None, vector_client = None, session_id: str = None) -> Dict[str, Any]:
         """
         Create a quick study session with a balanced set of activities
         
@@ -25,16 +30,24 @@ class SessionOrchestrator:
             duration_minutes: Session duration in minutes (default: 15)
             db: Optional database session
             vector_client: Optional vector store client
+            session_id: Optional existing session ID to update instead of creating new
             
         Returns:
             Session plan
         """
-        # Generate session ID
-        session_id = str(uuid.uuid4())
+        logger.debug(f"Base SessionOrchestrator.create_quick_session called with user_id={user_id}, topic={topic}, session_id={session_id}")
+        
+        # Generate session ID if not provided
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            logger.debug(f"Generated new session_id: {session_id}")
+        else:
+            logger.debug(f"Using provided session_id: {session_id}")
         
         # Get context for the topic if vector_client available
         context = ""
         if vector_client:
+            logger.debug("Retrieving context for topic from vector store")
             from app.utils.context_retrieval import retrieve_topic_context
             context_result = await retrieve_topic_context(
                 vector_client,
@@ -43,13 +56,18 @@ class SessionOrchestrator:
                 max_chunks=7
             )
             context = context_result.get("context", "")
+            logger.debug(f"Retrieved context of length {len(context)}")
+        else:
+            logger.debug("No vector client provided, skipping context retrieval")
         
         # Calculate activity durations based on total time
+        logger.debug(f"Calculating activity durations for {duration_minutes} minutes total")
         intro_time = min(5, duration_minutes // 5)
         remaining_time = duration_minutes - intro_time
         
         # For shorter sessions, pick either flashcards or quiz, not both
         if duration_minutes <= 10:
+            logger.debug("Short session detected (<= 10 min), using simplified activity set")
             activities = [
                 {
                     "type": "introduction",
@@ -69,6 +87,7 @@ class SessionOrchestrator:
             ]
         else:
             # For longer sessions, include multiple activity types
+            logger.debug("Longer session detected (> 10 min), using full activity set")
             flashcard_time = remaining_time // 3
             quiz_time = remaining_time // 3
             summary_time = remaining_time - flashcard_time - quiz_time
@@ -108,6 +127,7 @@ class SessionOrchestrator:
             ]
         
         # Create the session plan
+        logger.debug("Creating session plan")
         plan = {
             "session_id": session_id,
             "user_id": user_id,
@@ -121,14 +141,20 @@ class SessionOrchestrator:
         }
         
         # Store the active session
+        logger.debug(f"Storing session {session_id} in active_sessions")
         self.active_sessions[session_id] = plan
         
         # Save to database if possible
         if db:
+            logger.debug(f"Saving session {session_id} to database")
             from app.models import repository
             session_record = repository.create_study_session(db, user_id, json.dumps(plan))
             plan["record_id"] = session_record.id
+            logger.debug(f"Session saved to database with record_id: {session_record.id}")
+        else:
+            logger.debug("No database session provided, skipping database save")
         
+        logger.debug(f"Session {session_id} creation completed successfully with {len(activities)} activities")
         return plan
     
     async def execute_activity(self, session_id: str, activity_index: int = None, 
