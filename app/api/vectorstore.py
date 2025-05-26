@@ -1,5 +1,5 @@
 # app/api/vectorstore.py
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from typing import List, Dict, Any
 import os
@@ -10,6 +10,11 @@ import numpy as np
 
 from app.core.vector_store import get_vector_store_client
 from app.utils.text_preprocessing import clean_text, smart_chunk_text
+from app.api.user import get_current_user
+# Import database models
+from app.models.models import UploadedDocument, DocumentChunk
+from app.models.db import get_db
+from sqlalchemy.orm import Session
 import faiss
 import pickle
 import re
@@ -41,7 +46,7 @@ async def extract_text(file: UploadFile) -> str:
         raise HTTPException(status_code=500, detail=f"Failed to extract text: {str(e)}")
 
 @router.post("/upload")
-async def upload_and_vectorize(files: List[UploadFile] = File(...)):
+async def upload_and_vectorize(files: List[UploadFile] = File(...), db: Session = Depends(get_db), user_email: str = "qwe@gmail.com"):
     """
     Upload files, process them into chunks, and add to vector store
     with improved chunking to respect document structure
@@ -49,12 +54,14 @@ async def upload_and_vectorize(files: List[UploadFile] = File(...)):
     # Get client
     vector_client = get_vector_store_client()
     
-    # Reset the index to ensure dimensions match
-    vector_client.index = faiss.IndexFlatL2(vector_client.embedding_dim)
-    vector_client.metadata = []
-    
     all_metadatas = []
     total_chunks = 0
+    
+    # Don't reset the index - we want to keep all documents in the system
+    # Just add the new documents to the existing index
+    if vector_client.index is None:
+        vector_client.index = faiss.IndexFlatL2(vector_client.embedding_dim)
+        vector_client.metadata = []
     
     for file in files:
         try:
@@ -71,10 +78,24 @@ async def upload_and_vectorize(files: List[UploadFile] = File(...)):
                 # For regular text files and PDFs
                 chunks = smart_chunk_text(text, chunk_size=1200, overlap=150)
             
-            now = datetime.datetime.utcnow().isoformat()
+            now = datetime.datetime.utcnow()
+            now_str = now.isoformat()
             metadatas = []
             
             print(f"Processing {file.filename} with {len(chunks)} chunks")
+            
+            # Create database entry for the document
+            db_document = UploadedDocument(
+                file_name=file.filename,
+                file_path=f"uploads/{file.filename}",  # This is a placeholder path
+                uploaded_at=now,
+                # Use email as user_id instead of hardcoded "1"
+                user_id=user_email
+            )
+            db.add(db_document)
+            db.flush()  # Get the document ID without committing transaction
+            
+            print(f"Created document entry with ID: {db_document.id} for user {user_email}")
             
             # Process each chunk
             for idx, chunk in enumerate(chunks):
@@ -84,13 +105,26 @@ async def upload_and_vectorize(files: List[UploadFile] = File(...)):
                     # Generate embedding
                     embedding = await vector_client.generate_embedding(chunk)
                     
-                    # Create metadata
+                    # Serialize embedding for database storage
+                    embedding_str = ','.join([str(x) for x in embedding])
+                    
+                    # Create database entry for the chunk
+                    db_chunk = DocumentChunk(
+                        document_id=db_document.id,
+                        chunk_text=chunk,
+                        embedding=embedding_str,
+                        chunk_index=idx
+                    )
+                    db.add(db_chunk)
+                    
+                    # Create metadata - now including user_id
                     metadata = {
                         "filename": file.filename,
                         "filetype": os.path.splitext(file.filename)[1][1:] if '.' in file.filename else '',
                         "chunk_index": idx,
-                        "upload_time": now,
-                        "chunk": chunk
+                        "upload_time": now_str,
+                        "chunk": chunk,
+                        "user_id": user_email  # Add user_id to metadata
                     }
                     
                     # Add to FAISS index
@@ -130,10 +164,15 @@ async def upload_and_vectorize(files: List[UploadFile] = File(...)):
         with open(vector_client.meta_path, "wb") as f:
             pickle.dump(vector_client.metadata, f)
         
+        # Commit database changes
+        db.commit()
+        
         print(f"Vector store now has {vector_client.index.ntotal} vectors and {len(vector_client.metadata)} metadata entries")
+        print(f"Database now has new document entries for user {user_email}")
     except Exception as e:
-        print(f"Error saving index: {str(e)}")
-        return JSONResponse(content={"status": "error", "message": f"Error saving index: {str(e)}"}, status_code=500)
+        db.rollback()  # Rollback transaction on error
+        print(f"Error saving index or database entries: {str(e)}")
+        return JSONResponse(content={"status": "error", "message": f"Error saving data: {str(e)}"}, status_code=500)
     
     return JSONResponse(content={
         "status": "success", 
@@ -142,8 +181,8 @@ async def upload_and_vectorize(files: List[UploadFile] = File(...)):
     })
 
 @router.get("/documents")
-async def list_documents():
-    """List all documents stored in the vector store"""
+async def list_documents(user_email: str = "qwe@gmail.com"):
+    """List all documents stored in the vector store for a specific user"""
     vector_client = get_vector_store_client()
     
     if not vector_client.metadata:
@@ -153,12 +192,18 @@ async def list_documents():
     document_map = {}
     
     for item in vector_client.metadata:
+        # Filter by user_id if present in metadata
+        item_user_id = item.get("user_id", None)
+        if item_user_id and item_user_id != user_email:
+            continue
+            
         filename = item["filename"]
         if filename not in document_map:
             document_map[filename] = {
                 "filename": filename,
                 "filetype": item.get("filetype", ""),
                 "upload_time": item.get("upload_time", ""),
+                "user_id": item.get("user_id", user_email),
                 "chunk_count": 1
             }
         else:
@@ -170,10 +215,9 @@ async def list_documents():
     
     return {
         "document_count": len(documents),
-        "total_chunks": len(vector_client.metadata),
+        "total_chunks": sum(doc["chunk_count"] for doc in documents),
         "documents": documents
     }
-
 
 @router.post("/search")
 async def semantic_search(query: str, top_k: int = 5):
@@ -182,8 +226,9 @@ async def semantic_search(query: str, top_k: int = 5):
     return await vector_client.search(query, top_k)
 
 @router.post("/reset")
-async def reset_vector_store():
-    """Reset the vector store"""
+async def reset_vector_store(db: Session = Depends(get_db)):
+    """Reset the vector store and database document records"""
+    # Reset vector store
     vector_client = get_vector_store_client()
     vector_client.index = faiss.IndexFlatL2(vector_client.embedding_dim)
     vector_client.metadata = []
@@ -194,8 +239,24 @@ async def reset_vector_store():
     if os.path.exists(vector_client.meta_path):
         os.remove(vector_client.meta_path)
     
-    return {"status": "reset successful"}
-
+    # Clear database tables
+    try:
+        # Delete document chunks first (child records)
+        db.query(DocumentChunk).delete()
+        # Then delete documents (parent records)
+        db.query(UploadedDocument).delete()
+        # Commit changes
+        db.commit()
+        print("Database document records cleared")
+    except Exception as e:
+        db.rollback()
+        print(f"Error clearing database records: {str(e)}")
+        return JSONResponse(
+            content={"status": "partial reset", "message": f"Vector store reset but database error: {str(e)}"}, 
+            status_code=500
+        )
+    
+    return {"status": "reset successful", "message": "Vector store and database records cleared"}
 
 @router.post("/test-chunking")
 async def test_chunking(file: UploadFile = File(...)):

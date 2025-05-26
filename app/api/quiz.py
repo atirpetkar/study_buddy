@@ -151,3 +151,16 @@ async def get_quiz(quiz_id: str, db_session = Depends(db.get_db)):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving quiz: {str(e)}")
+
+@router.get("/user/{user_id}", response_model=List[Dict[str, Any]])
+async def get_user_quizzes(user_id: str, db_session = Depends(db.get_db)):
+    """Get all quizzes for a specific user"""
+    try:
+        # Map "user123" to "qwe@gmail.com" for compatibility with frontend
+        if user_id == "user123":
+            user_id = "qwe@gmail.com"
+            
+        quizzes = repository.get_user_quizzes(db_session, user_id)
+        return quizzes
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving user quizzes: {str(e)}")
