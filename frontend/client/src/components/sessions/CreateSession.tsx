@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -11,14 +11,15 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 import { getDocuments, createQuickSession } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { DEFAULT_USER_ID, API_BASE_URL } from "@/lib/config";
 
 const formSchema = z.object({
   topic: z.string().min(3, "Topic must be at least 3 characters"),
   description: z.string().optional(),
-  duration_minutes: z.string().transform(val => parseInt(val)),
+  duration_minutes: z.string().transform((val) => Number(val)),
   documents: z.array(z.string()).optional(),
   activities: z.array(z.string()).min(1, "Select at least one activity"),
 });
@@ -27,6 +28,8 @@ export default function CreateSession() {
   const [_, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [creationStatus, setCreationStatus] = useState("");
+  const pollingCountRef = useRef(0);
   
   const { data: documentsData, isLoading: loadingDocuments } = useQuery({
     queryKey: ['/api/vectorstore/documents'],
@@ -35,21 +38,6 @@ export default function CreateSession() {
   
   const createMutation = useMutation({
     mutationFn: createQuickSession,
-    onSuccess: (data) => {
-      toast({
-        title: "Session Created",
-        description: "Your study session has been created successfully.",
-      });
-      queryClient.invalidateQueries({ queryKey: ['/api/session/user'] });
-      setLocation(`/session/${data.session_id}`);
-    },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: "Failed to create session. Please try again.",
-        variant: "destructive",
-      });
-    },
   });
   
   const form = useForm<z.infer<typeof formSchema>>({
@@ -63,12 +51,144 @@ export default function CreateSession() {
     },
   });
   
-  const onSubmit = (values: z.infer<typeof formSchema>) => {
-    createMutation.mutate({
-      user_id: "user123", // In a real app, this would come from auth
-      topic: values.topic,
-      duration_minutes: values.duration_minutes,
-    });
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    try {
+      console.log("Form submitted with values:", values);
+      setCreationStatus("Initializing session...");
+      
+      // Convert string duration to number for API
+      const sessionParams = {
+        user_id: DEFAULT_USER_ID,
+        topic: values.topic,
+        duration_minutes: parseInt(values.duration_minutes),
+      };
+      console.log("Sending to API with parameters:", sessionParams);
+      
+      const sessionData = await createMutation.mutateAsync(sessionParams);
+      console.log("Session created successfully with ID:", sessionData.session_id);
+      
+      // Start polling for session status
+      await pollSessionStatus(sessionData.session_id);
+    } catch (error) {
+      console.error("Error in session creation:", error);
+      toast({
+        title: "Session Creation Failed",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+        variant: "destructive",
+      });
+      setCreationStatus("");
+    }
+  };
+  
+  const pollSessionStatus = async (sessionId: string) => {
+    const MAX_POLLS = 30; // Increased to allow more time
+    const POLL_INTERVAL = 1500; // 1.5 seconds
+    
+    console.log(`Starting to poll for session status: ${sessionId}`);
+    pollingCountRef.current = 0;
+    
+    const checkStatus = async () => {
+      try {
+        pollingCountRef.current += 1;
+        console.log(`Poll attempt ${pollingCountRef.current}/${MAX_POLLS} for session: ${sessionId}`);
+        
+        if (pollingCountRef.current >= MAX_POLLS) {
+          console.log(`Polling timeout reached for session: ${sessionId}`);
+          toast({
+            title: "Session Creation Taking Longer Than Expected",
+            description: "The session is still being created in the background. You can check your sessions list later.",
+            variant: "destructive",
+          });
+          setCreationStatus("");
+          queryClient.invalidateQueries({ queryKey: ['/session/user'] });
+          setLocation('/sessions');
+          return;
+        }
+        
+        // Fetch current session status - fixed URL to include API_BASE_URL
+        const url = `${API_BASE_URL}/session/${sessionId}`;
+        console.log(`Polling URL: ${url}`);
+        
+        setCreationStatus(`Preparing your session... (attempt ${pollingCountRef.current}/${MAX_POLLS})`);
+        
+        const response = await fetch(url);
+        console.log(`Poll response status: ${response.status}`);
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error(`Poll error: ${response.status}`, errorData);
+          throw new Error(errorData.detail || `Server error: ${response.status}`);
+        }
+        
+        const sessionData = await response.json();
+        console.log(`Poll response data:`, sessionData);
+        
+        // Use status_message from backend if available
+        if (sessionData.status_message) {
+          setCreationStatus(sessionData.status_message);
+        } else if (sessionData.elapsed_time_seconds) {
+          setCreationStatus(`Creating session... (${Math.round(sessionData.elapsed_time_seconds)}s elapsed)`);
+        }
+        
+        // Check session status
+        if (sessionData.status === "error") {
+          toast({
+            title: "Session Creation Failed",
+            description: sessionData.error_message || "An error occurred creating the session",
+            variant: "destructive",
+          });
+          setCreationStatus("");
+          queryClient.invalidateQueries({ queryKey: ['/session/user'] });
+          setLocation('/sessions');
+          return;
+        }
+        
+        if (sessionData.status === "planned" || sessionData.status === "in_progress") {
+          // Session created successfully
+          toast({
+            title: "Success",
+            description: "Study session created successfully",
+          });
+          setCreationStatus("");
+          queryClient.invalidateQueries({ queryKey: ['/session/user'] });
+          setLocation(`/session/${sessionId}`);
+          return;
+        }
+        
+        // If still initializing, continue polling
+        if (sessionData.status === "initializing") {
+          setTimeout(checkStatus, POLL_INTERVAL);
+        } else {
+          // Unknown status
+          toast({
+            title: "Unknown Status",
+            description: `Session has unknown status: ${sessionData.status}`,
+            variant: "destructive",
+          });
+          setCreationStatus("");
+          queryClient.invalidateQueries({ queryKey: ['/session/user'] });
+          setLocation('/sessions');
+        }
+      } catch (error) {
+        console.error("Error polling session status:", error);
+        // If there's an error, try again unless we've reached the limit
+        if (pollingCountRef.current < MAX_POLLS) {
+          setTimeout(checkStatus, POLL_INTERVAL);
+        } else {
+          toast({
+            title: "Failed to Check Status",
+            description: "Could not verify if the session was created. Please check your sessions list.",
+            variant: "destructive",
+          });
+          setCreationStatus("");
+          queryClient.invalidateQueries({ queryKey: ['/session/user'] });
+          setLocation('/sessions');
+        }
+      }
+    };
+    
+    // Start polling
+    setTimeout(checkStatus, POLL_INTERVAL);
   };
   
   return (
@@ -231,13 +351,19 @@ export default function CreateSession() {
                 )}
               />
               
-              <div className="flex justify-end">
+              <div className="flex justify-end items-center">
+                {creationStatus && (
+                  <div className="flex items-center mr-4 text-sm text-gray-600">
+                    <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                    {creationStatus}
+                  </div>
+                )}
                 <Button 
                   type="submit" 
-                  disabled={createMutation.isPending}
+                  disabled={createMutation.isPending || Boolean(creationStatus)}
                   className="bg-primary hover:bg-indigo-700"
                 >
-                  {createMutation.isPending ? "Creating..." : "Create Session"}
+                  {createMutation.isPending || creationStatus ? "Creating..." : "Create Session"}
                 </Button>
               </div>
             </form>

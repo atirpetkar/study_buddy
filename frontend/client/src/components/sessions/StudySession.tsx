@@ -11,6 +11,7 @@ import ActivityQuiz from "./ActivityQuiz";
 import ActivityFlashcard from "./ActivityFlashcard";
 import ActivitySummary from "./ActivitySummary";
 import { useToast } from "@/hooks/use-toast";
+import { DEFAULT_USER_ID } from "@/lib/config";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,10 +32,10 @@ export default function StudySession() {
   const [remainingTime, setRemainingTime] = useState("15:00");
   
   const { data: session, isLoading, error } = useQuery({
-    queryKey: ['/api/session/user', 'user123'],
+    queryKey: ['/api/session/user', DEFAULT_USER_ID],
     queryFn: async () => {
       // Simulate fetching the specific session - in a real app, you'd have a getSessionById API call
-      const sessions = await fetch('/api/session/user/user123').then(res => res.json());
+      const sessions = await fetch(`/api/session/user/${DEFAULT_USER_ID}`).then(res => res.json());
       const session = sessions.find((s: any) => s.session_id === id);
       if (!session) throw new Error("Session not found");
       return session;
@@ -44,7 +45,7 @@ export default function StudySession() {
   const executeMutation = useMutation({
     mutationFn: executeActivity,
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/session/user', 'user123'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/session/user', DEFAULT_USER_ID] });
     },
     onError: (error) => {
       toast({
