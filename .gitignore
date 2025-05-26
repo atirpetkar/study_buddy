@@ -2,10 +2,11 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.db
+*.db
 .env
 faiss.index
 faiss_meta.pkl
+db/codedspace.db
 
 # Node.js / Frontend
 node_modules/
