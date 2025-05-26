@@ -1,10 +1,41 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { createProxyMiddleware } from 'http-proxy-middleware';
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Add proxy middleware to forward API requests to the FastAPI backend with detailed logging
+app.use('/api', createProxyMiddleware({ 
+  target: 'http://localhost:8000',
+  changeOrigin: true,
+  pathRewrite: {
+    '^/api': '', // Remove /api prefix when forwarding to FastAPI
+  },
+  onProxyReq: (proxyReq, req, res) => {
+    // Log the request being proxied
+    const body = req.body ? JSON.stringify(req.body) : 'no body';
+    log(`Proxying ${req.method} request to: ${req.path}`);
+    log(`Request headers: ${JSON.stringify(req.headers['content-type'] || 'none')}`);
+    
+    // For debugging content-type related issues
+    if (req.method === 'POST') {
+      if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
+        log('Processing form-urlencoded data');
+      }
+    }
+  },
+  onProxyRes: (proxyRes, req, res) => {
+    // Log proxy response
+    log(`Received response from backend: ${proxyRes.statusCode} for ${req.method} ${req.path}`);
+  },
+  onError: (err, req, res) => {
+    log(`Proxy error: ${err.message}`);
+    res.status(500).json({ error: 'Proxy error', message: err.message });
+  }
+}));
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -56,8 +87,8 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // Changed port from 5000 to 3000 to avoid conflicts
-  const port = 3000;
+  // Use environment variable for port, fallback to 3001 if port 3000 is busy
+  const port = process.env.FRONTEND_PORT ? parseInt(process.env.FRONTEND_PORT) : 3001;
   server.listen({
     port,
     host: "0.0.0.0",

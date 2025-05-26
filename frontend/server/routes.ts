@@ -86,82 +86,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Study Session Routes
-  apiRouter.post("/session/quick", async (req, res) => {
-    try {
-      const schema = z.object({
-        user_id: z.string(),
-        topic: z.string(),
-        duration_minutes: z.number().int().positive(),
-      });
+  // IMPORTANT: Removing this route handler so requests are properly proxied to the FastAPI backend
+  // apiRouter.post("/session/quick", async (req, res) => {
+  //   try {
+  //     const schema = z.object({
+  //       user_id: z.string(),
+  //       topic: z.string(),
+  //       duration_minutes: z.number().int().positive(),
+  //     });
 
-      const validation = schema.safeParse(req.body);
-      if (!validation.success) {
-        return res.status(400).json({ message: "Invalid request data", errors: validation.error.format() });
-      }
+  //     const validation = schema.safeParse(req.body);
+  //     if (!validation.success) {
+  //       return res.status(400).json({ message: "Invalid request data", errors: validation.error.format() });
+  //     }
 
-      const { user_id, topic, duration_minutes } = validation.data;
+  //     const { user_id, topic, duration_minutes } = validation.data;
       
-      // Create a balanced study session with activities
-      const session_id = `sess_${nanoid(6)}`;
-      const totalMinutes = duration_minutes;
+  //     // Create a balanced study session with activities
+  //     const session_id = `sess_${nanoid(6)}`;
+  //     const totalMinutes = duration_minutes;
       
-      // Allocate time for each activity type
-      const introTime = Math.max(2, Math.floor(totalMinutes * 0.2));
-      const quizTime = Math.max(5, Math.floor(totalMinutes * 0.3));
-      const flashcardTime = Math.max(5, Math.floor(totalMinutes * 0.3));
-      const summaryTime = totalMinutes - introTime - quizTime - flashcardTime;
+  //     // Allocate time for each activity type
+  //     const introTime = Math.max(2, Math.floor(totalMinutes * 0.2));
+  //     const quizTime = Math.max(5, Math.floor(totalMinutes * 0.3));
+  //     const flashcardTime = Math.max(5, Math.floor(totalMinutes * 0.3));
+  //     const summaryTime = totalMinutes - introTime - quizTime - flashcardTime;
       
-      const activities = [
-        {
-          type: "introduction",
-          duration_minutes: introTime,
-          description: `Introduction to ${topic}`,
-          parameters: { topic }
-        },
-        {
-          type: "flashcard",
-          duration_minutes: flashcardTime,
-          description: `Review key concepts in ${topic}`,
-          parameters: { num_cards: 3, topic }
-        },
-        {
-          type: "quiz",
-          duration_minutes: quizTime,
-          description: `Test your knowledge of ${topic}`,
-          parameters: { num_questions: 2, difficulty: "medium", topic }
-        },
-        {
-          type: "summary",
-          duration_minutes: summaryTime,
-          description: `Summarize what you've learned about ${topic}`,
-          parameters: { topic }
-        }
-      ];
+  //     const activities = [
+  //       {
+  //         type: "introduction",
+  //         duration_minutes: introTime,
+  //         description: `Introduction to ${topic}`,
+  //         parameters: { topic }
+  //       },
+  //       {
+  //         type: "flashcard",
+  //         duration_minutes: flashcardTime,
+  //         description: `Review key concepts in ${topic}`,
+  //         parameters: { num_cards: 3, topic }
+  //       },
+  //       {
+  //         type: "quiz",
+  //         duration_minutes: quizTime,
+  //         description: `Test your knowledge of ${topic}`,
+  //         parameters: { num_questions: 2, difficulty: "medium", topic }
+  //       },
+  //       {
+  //         type: "summary",
+  //         duration_minutes: summaryTime,
+  //         description: `Summarize what you've learned about ${topic}`,
+  //         parameters: { topic }
+  //       }
+  //     ];
 
-      const session = await storage.createSession({
-        session_id,
-        user_id,
-        topic,
-        duration_minutes,
-        activities,
-        status: "planned",
-      });
+  //     const session = await storage.createSession({
+  //       session_id,
+  //       user_id,
+  //       topic,
+  //       duration_minutes,
+  //       activities,
+  //       status: "planned",
+  //     });
 
-      res.status(200).json({
-        session_id,
-        user_id,
-        topic,
-        duration_minutes,
-        created_at: session.created_at,
-        activities,
-        status: "planned",
-        current_activity_index: 0
-      });
-    } catch (error) {
-      console.error("Error creating session:", error);
-      res.status(500).json({ message: "Error creating study session" });
-    }
-  });
+  //     res.status(200).json({
+  //       session_id,
+  //       user_id,
+  //       topic,
+  //       duration_minutes,
+  //       created_at: session.created_at,
+  //       activities,
+  //       status: "planned",
+  //       current_activity_index: 0
+  //     });
+  //   } catch (error) {
+  //     console.error("Error creating session:", error);
+  //     res.status(500).json({ message: "Error creating study session" });
+  //   }
+  // });
 
   apiRouter.post("/session/execute", async (req, res) => {
     try {
@@ -449,6 +450,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Error generating chat response" });
     }
   });
+
+  // Get session by ID - should be proxied to backend
+  // NOTE: We don't implement this here because it should go to the FastAPI backend
+  // apiRouter.get("/session/:session_id", async (req, res) => {...})
 
   const httpServer = createServer(app);
   return httpServer;
